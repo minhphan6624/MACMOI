@@ -52,22 +52,22 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'use_sim_time',
-            default_value='false',
-            description='Use simulation clock if true',
+            default_value='False',
+            description='Use simulation clock if True',
         ),
         DeclareLaunchArgument(
             'autostart',
-            default_value='true',
+            default_value='True',
             description='Automatically startup the Nav2 stack',
         ),
         DeclareLaunchArgument(
             'slam',
-            default_value='false',
+            default_value='False',
             description='Whether to run SLAM instead of localization',
         ),
         DeclareLaunchArgument(
             'use_localization',
-            default_value='true',
+            default_value='True',
             description='Whether to enable localization',
         ),
         DeclareLaunchArgument(
