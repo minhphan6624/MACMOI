@@ -38,7 +38,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'use_sim_time',
-            default_value='false',
+            default_value='False',
             description='Use simulation clock if true',
         ),
         DeclareLaunchArgument(
@@ -48,7 +48,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'slam',
-            default_value='false',
+            default_value='False',
             description='Whether to run SLAM instead of localization',
         ),
         DeclareLaunchArgument(
@@ -77,7 +77,7 @@ def generate_launch_description():
             ),
             launch_arguments={
                 'namespace': '',
-                'use_namespace': 'false',
+                'use_namespace': 'False',
                 'map': map_yaml_file,
                 'params_file': params_file,
                 'use_sim_time': use_sim_time,
