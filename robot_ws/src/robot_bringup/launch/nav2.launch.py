@@ -43,7 +43,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'autostart',
-            default_value='true',
+            default_value='True',
             description='Automatically startup the Nav2 stack',
         ),
         DeclareLaunchArgument(
@@ -53,7 +53,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             'use_localization',
-            default_value='true',
+            default_value='True',
             description='Whether to enable localization',
         ),
         DeclareLaunchArgument(
