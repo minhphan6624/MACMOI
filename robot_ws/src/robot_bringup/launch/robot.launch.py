@@ -3,6 +3,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.actions import GroupAction
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -85,26 +86,36 @@ def generate_launch_description():
             default_value='info',
             description='Log level for Nav2 nodes',
         ),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(os.path.join(launch_dir, 'hardware.launch.py')),
-            launch_arguments={
-                'usb_port': usb_port,
-                'tb3_param_dir': tb3_param_dir,
-                'use_sim_time': use_sim_time,
-            }.items(),
+        GroupAction(
+            scoped=True,
+            actions=[
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(os.path.join(launch_dir, 'hardware.launch.py')),
+                    launch_arguments={
+                        'usb_port': usb_port,
+                        'tb3_param_dir': tb3_param_dir,
+                        'use_sim_time': use_sim_time,
+                    }.items(),
+                ),
+            ],
         ),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(os.path.join(launch_dir, 'nav2.launch.py')),
-            launch_arguments={
-                'map': map_yaml_file,
-                'params_file': params_file,
-                'use_sim_time': use_sim_time,
-                'autostart': autostart,
-                'slam': slam,
-                'use_localization': use_localization,
-                'use_composition': use_composition,
-                'use_respawn': use_respawn,
-                'log_level': log_level,
-            }.items(),
+        GroupAction(
+            scoped=True,
+            actions=[
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(os.path.join(launch_dir, 'nav2.launch.py')),
+                    launch_arguments={
+                        'map': map_yaml_file,
+                        'params_file': params_file,
+                        'use_sim_time': use_sim_time,
+                        'autostart': autostart,
+                        'slam': slam,
+                        'use_localization': use_localization,
+                        'use_composition': use_composition,
+                        'use_respawn': use_respawn,
+                        'log_level': log_level,
+                    }.items(),
+                ),
+            ],
         ),
     ])
