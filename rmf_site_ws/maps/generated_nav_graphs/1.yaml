@@ -33,7 +33,7 @@ levels:
       - {is_charger: true, name: wp1}
     - - 11.238941708114272
       - -3.7840339923643755
-      - {name: wp2}
+      - {is_charger: true, name: wp2}
     - - 11.125732088821865
       - -5.676075663703339
       - {name: wp3}

@@ -116,6 +116,94 @@ Navigation goal [...] accepted
 Navigation goal [...] reached
 ```
 
+## 1.7. Two-Robot Physical Smoke Test
+
+Use the normal one-robot commands above when testing one TurtleBot3. For a
+two-robot test, start both robots first and use the two-robot fleet config.
+
+Robot 1 Nav2 bringup:
+
+```bash
+source /home/ubuntu/MAMCUI/robot_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+ros2 launch robot_bringup robot.launch.py \
+  params_file:=/home/ubuntu/MAMCUI/robot_ws/install/robot_bringup/share/robot_bringup/config/nav2_waffle_pi_tb3_1.yaml
+```
+
+Robot 2 Nav2 bringup:
+
+```bash
+source /home/ubuntu/MAMCUI/robot_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+ros2 launch robot_bringup robot.launch.py \
+  params_file:=/home/ubuntu/MAMCUI/robot_ws/install/robot_bringup/share/robot_bringup/config/nav2_waffle_pi_tb3_2.yaml
+```
+
+On each robot PC, verify that AMCL / Nav2 is publishing a believable map-frame
+pose before starting the fleet adapter:
+
+```bash
+ros2 run tf2_ros tf2_echo map base_footprint
+```
+
+Expected automatic initial pose from the current robot-specific Nav2 params:
+
+```text
+tb3_1 -> [0.0, 1.0, 0.0]
+tb3_2 -> [1.0, 1.0, 0.0]
+```
+
+Start the Zenoh bridge on each robot PC. The first robot's bridge config should
+expose Nav2 as namespace `tb3_1`; the second robot's bridge config should
+expose Nav2 as namespace `tb3_2`.
+
+Before starting RMF tasks, send direct Nav2 goals through Zenoh from the central
+PC:
+
+```bash
+source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
+source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
+
+ros2 run free_fleet_examples nav2_send_navigate_to_pose.py \
+  --frame-id map \
+  --namespace tb3_1 \
+  -x 0.5564 \
+  -y 2.0371
+
+ros2 run free_fleet_examples nav2_send_navigate_to_pose.py \
+  --frame-id map \
+  --namespace tb3_2 \
+  -x -2.1961 \
+  -y 2.1682
+```
+
+Launch RMF common using the command in section 1.4, then launch the adapter with
+the two-robot fleet config:
+
+```bash
+source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
+source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+ros2 launch free_fleet_adapter fleet_adapter.launch.xml \
+  use_sim_time:=false \
+  config_file:=/home/minhqphan/projects/MAMCUI/adapter_ws/config/free_fleet/tb3_lab_two_robot_fleet.yaml \
+  nav_graph_file:=/home/minhqphan/projects/MAMCUI/rmf_site_ws/maps/generated_nav_graphs/1.yaml
+```
+
+Both configured robots must be on, localized, bridged, and publishing TF before
+the two-robot adapter starts. Healthy startup should add both `tb3_1` and
+`tb3_2` to fleet `tb3_lab`.
+
+The current two-robot charger assignment is:
+
+```text
+tb3_1 -> wp1
+tb3_2 -> wp2
+```
+
 # 2. Build scripts
 
 ## 2.1. Build Free Fleet
