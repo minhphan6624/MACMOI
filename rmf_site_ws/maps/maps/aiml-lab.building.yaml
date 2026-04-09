@@ -17,7 +17,7 @@ graphs:
 levels:
   LG:
     drawing:
-      filename: aiml-lab-map1.png
+      filename: aiml-lab.png
     elevation: 0
     lanes:
       - [3, 0, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, ""], orientation: [1, ""], speed_limit: [3, 0]}]
