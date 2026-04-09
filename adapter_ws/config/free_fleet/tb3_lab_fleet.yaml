@@ -1,0 +1,56 @@
+rmf_fleet:
+  name: "tb3_lab"
+  limits:
+    linear: [0.3, 3.0]
+    angular: [1.0, 3.2]
+  profile:
+    footprint: 0.15
+    vicinity: 0.3
+  reversible: true
+  battery_system:
+    voltage: 12.0
+    capacity: 18.0
+    charging_current: 1.0
+  mechanical_system:
+    mass: 3.0
+    moment_of_inertia: 0.05
+    friction_coefficient: 0.22
+  ambient_system:
+    power: 8.0
+  tool_system:
+    power: 0.0
+  recharge_threshold: 0.15
+  recharge_soc: 1.0
+  publish_fleet_state: 10.0
+  account_for_battery_drain: true
+  task_capabilities:
+    loop: true
+    delivery: false
+  finishing_request: "nothing"
+  responsive_wait: true
+  robots:
+    tb3_2:
+      charger: "wp1"
+      responsive_wait: false
+      navigation_stack: 2
+      init_timeout_sec: 30
+      initial_map: "LG"
+      map_frame: "map"
+      robot_frame: "base_footprint"
+      maps:
+        LG:
+          map_url: "/home/minhqphan/projects/MAMCUI/robot_ws/src/robot_bringup/maps/aiml_lab.yaml"
+  robot_state_update_frequency: 10.0
+
+reference_coordinates:
+  LG:
+    rmf:
+      - [11.238941708114272, -3.7840339923643755]
+      - [11.125732088821865, -5.676075663703339]
+      - [14.004187827474095, -5.934819357665889]
+      - [13.955676469250713, -3.9134305145024273]
+    robot:
+      - [-2.1961, 2.1682]
+      - [-2.3108, 0.2512]
+      - [0.6056, -0.0110]
+      - [0.5564, 2.0371]
