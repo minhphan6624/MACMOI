@@ -5,17 +5,13 @@ robot with Open-RMF through `free_fleet`.
 
 For setup context, see `docs/free_fleet_rmf_integration.md`.
 
-## Current Unresolved Blocker
+# 1. Current Issues
 
-### `free_fleet_adapter` exits with code `-11`
+# `free_fleet_adapter` exits with code `-11`
 
-Status: unresolved.
+Status: resolved by downgrading `numpy` to `1.26.0`.
 
-Symptom:
-
-```text
-[ERROR] [fleet_adapter.py-*]: process has died [..., exit code -11, cmd '.../fleet_adapter.py ...']
-```
+Symptom: `[ERROR] [fleet_adapter.py-*]: process has died [..., exit code -11, cmd '.../fleet_adapter.py ...']`
 
 Observed in:
 
@@ -24,22 +20,80 @@ Observed in:
 
 Current conclusion:
 
-This is probably not caused by the lab building map, physical robot, robot-side
-Zenoh bridge, lab fleet config, or lab coordinate alignment. The stock
-`free_fleet` example also crashes in a similar startup phase.
+This is probably not caused by the lab building map, physical robot, robot-side Zenoh bridge, lab fleet config, or lab coordinate alignment. The stock `free_fleet` example also crashes in a similar startup phase.
 
-The suspected crash point is native RMF / adapter startup around fleet
-registration. In the logs, the adapter computes the coordinate transform and
-then dies before robot initialization logs appear.
+The suspected crash point is native RMF / adapter startup around fleet registration. In the logs, the adapter computes the coordinate transform and then dies before robot initialization logs appear.
 
-Recommended next step:
+Further inspection:
 
-```text
-Run the stock example adapter or lab adapter under gdb.
+The adapter adapter is not exiting because of a normal Python error. exit code -11 is a segmentation fault, so something in the native C++ layer underneath the Python adapter is crashing.
+In a recent Open-RMF Jazzy bug report, the crash happens in the same place, right after the log line `Transformation error estimate for ...` and when the adapter constructs the RMF Transformation object. That issue was reported on Ubuntu 24.04, Jazzy, with RMF installed from binaries, which matches our setup
+
+So the likely problem is: There is a bug in the Jazzy binary stack around fleet adapter transform setup, not necessarily a mistake in the map or robot integration. Your logs match that failure pattern very closely: RMF schedule discovery works, query registration works, mirror sync works, transform estimation is printed, then the process segfaults immediately.
+
+What that means in practical terms:
+
+The adapter is getting far enough to join RMF traffic scheduling successfully.
+It is also getting far enough to read your config and compute the transform estimate.
+The crash is likely happening when the Python adapter crosses into the compiled rmf_adapter native code to create or use the transformation object.
+
+If this failure returns: Run the stock example adapter or lab adapter under gdb.
 After the crash, run `bt` and inspect / save the backtrace.
+
+Resolution: downgrade `numpy` in the adapter environment to `1.26.0`.
+
+# 2. Resolved / Investigated Issues
+
+### TurtleBot3 battery percentage is outside RMF's expected SOC range
+
+Status: locally patched in the `free_fleet_adapter` source clone.
+
+Symptom:
+
+The adapter receives a `sensor_msgs/msg/BatteryState.percentage` value like
+`31.1`, then RMF rejects it because robot battery state-of-charge must be in
+the `0.0..1.0` range.
+
+Cause:
+
+The apt-installed TurtleBot3 node may publish a 0-to-100 percentage. ROS 2 and
+RMF expect battery state-of-charge to be a fraction: `31.1%` should be `0.311`.
+
+Local adapter-side compatibility patch:
+
+```python
+percentage = battery_state.percentage
+if percentage > 1.0 and percentage <= 100.0:
+    percentage /= 100.0
+self.battery_soc = percentage
 ```
 
-## Resolved / Investigated Issues
+Preferred long-term cleanup:
+
+Publish a normalized `BatteryState` on the robot side, or add a small
+republisher/normalizer node so the upstream `free_fleet` code can stay
+unchanged.
+
+### Adapter registers the robot successfully
+
+Status: current healthy startup target.
+
+Expected adapter log shape:
+
+```text
+Successfully added robot [<robot_name>] to the fleet [tb3_lab]
+Charger waypoint for robot [tb3_lab/<robot_name>] set to index [0]
+```
+
+Meaning:
+
+The adapter has read the fleet config and nav graph, connected to RMF schedule,
+initialized the robot pose, created an RMF robot update handle, and registered
+the robot with the `tb3_lab` fleet.
+
+This is a startup/registration milestone. Still perform a direct Nav2 test, a
+Zenoh Nav2 goal test, `/fleet_states` inspection, and a single-waypoint RMF
+patrol before running longer patrols.
 
 ### Missing Python `catkin_pkg` while building `free_fleet`
 
@@ -250,16 +304,65 @@ Current interpretation:
 This is an RViz / graphics capability warning and is not related to the
 `free_fleet_adapter` crash.
 
-## Debugging Notes
+### Zenoh router prints query timeout / "Query not found" warnings
 
-Useful question for each failure:
+Status: investigate if paired with navigation failure.
+
+Observed warning shape:
 
 ```text
-Does the stock free_fleet example fail the same way?
+Didn't receive final reply for query ... Timeout(10s)!
+Route reply: Query not found!
+Route final reply: Query not found!
 ```
+
+Meaning:
+
+A Zenoh query did not get a final reply before the timeout or a late reply could
+not be routed back to the original requester.
+
+For this Nav2 free-fleet setup, important queried action endpoints include:
+
+```text
+<robot_name>/navigate_to_pose/_action/send_goal
+<robot_name>/navigate_to_pose/_action/get_result
+<robot_name>/navigate_to_pose/_action/cancel_goal
+```
+
+If the warnings happen during startup but the adapter later prints
+`Navigation goal [...] accepted` and the robot moves, treat them as background
+noise for that test.
+
+If the warnings appear each time a task is dispatched and the adapter does not
+print goal-accepted / goal-reached logs, check that the robot-side Nav2 action
+exists and that the robot-side Zenoh bridge config exposes the
+`navigate_to_pose` action for the same namespace as the fleet config robot key.
+
+### RMF patrol motion looks wrong while direct Nav2 goals look correct
+
+Status: coordinate/localization issue to debug methodically.
+
+Important distinction:
+
+Nav2 AMCL initial pose should be the physical robot's real pose in the Nav2
+map, not automatically the RMF charger waypoint `wp1`.
+
+`wp1` is currently the temporary RMF charger waypoint. It corresponds to about
+`[0.5564, 2.0371]` in the Nav2 map frame.
+
+Debug path:
+
+1. Set AMCL/RViz initial pose to the robot's real physical location.
+2. Send direct Nav2 goals at the known waypoint map-frame coordinates.
+3. Dispatch `ros2 run rmf_demos_tasks dispatch_patrol -p wp1 -n 1 -st 0`.
+4. Compare the adapter's `Commanding [...] to navigate to [...]` output against
+   the expected Nav2 coordinates.
+5. Only try a 4-point patrol after one waypoint behaves correctly.
+
+# Debugging Notes
+
+Useful question for each failure: Does the stock free_fleet example fail the same way?
 
 If yes, debug environment / runtime compatibility before editing the lab map.
 
-If no, compare the lab fleet config, generated nav graph, charger waypoints,
-level names, robot names, and reference coordinates against the stock example.
-
+If no, compare the lab fleet config, generated nav graph, charger waypoints, level names, robot names, and reference coordinates against the stock example.
