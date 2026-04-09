@@ -1,4 +1,4 @@
-building_name: aiml-lab
+building_name: aiml-lab-map1
 doors: {}
 levels:
   LG:
@@ -30,7 +30,7 @@ levels:
     vertices:
     - - 13.955676469250713
       - -3.9134305145024273
-      - {name: wp1}
+      - {is_charger: true, name: wp1}
     - - 11.238941708114272
       - -3.7840339923643755
       - {name: wp2}
