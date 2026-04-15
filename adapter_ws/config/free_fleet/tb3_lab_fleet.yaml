@@ -29,7 +29,7 @@ rmf_fleet:
   finishing_request: "nothing"
   responsive_wait: true
   robots:
-    tb3_2:
+    tb3_1:
       charger: "wp1"
       responsive_wait: false
       navigation_stack: 2
@@ -40,6 +40,18 @@ rmf_fleet:
       maps:
         LG:
           map_url: "/home/minhqphan/projects/MAMCUI/robot_ws/src/robot_bringup/maps/aiml_lab.yaml"
+
+    # tb3_2:
+    #   charger: "wp1"
+    #   responsive_wait: false
+    #   navigation_stack: 2
+    #   init_timeout_sec: 30
+    #   initial_map: "LG"
+    #   map_frame: "map"
+    #   robot_frame: "base_footprint"
+    #   maps:
+    #     LG:
+    #       map_url: "/home/minhqphan/projects/MAMCUI/robot_ws/src/robot_bringup/maps/aiml_lab.yaml"
   robot_state_update_frequency: 10.0
 
 reference_coordinates:

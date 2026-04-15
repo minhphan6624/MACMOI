@@ -20,11 +20,15 @@ Run on the robot PC / Raspberry Pi, adjusting source paths if the workspace is
 deployed at a different location:
 
 ```bash
-source /home/ubuntu/MAMCUI/robot_ws/install/setup.bash
+source robot_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 launch robot_bringup robot.launch.py
+ros2 launch robot_bringup robot.launch.py robot_id:=tb3_1
 ```
+
+Use `robot_id:=tb3_2` on the second robot. The launch script now selects the
+matching robot-specific Nav2 YAML by default, and those per-robot configs use
+regulated pure pursuit as the main controller plugin.
 
 ## 1.2. Start Zenoh Router
 
@@ -46,11 +50,11 @@ zenoh-bridge-ros2dds -c ~/zenoh/config/<robot_bridge_config>.json5
 Run on the central PC before launching the adapter. This uses the rmf common launch file from the free_fleet_examples package:
 
 ```bash
-source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
-source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
+source adapter_ws/.venv/bin/activate
+source adapter_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 launch /home/minhqphan/projects/MAMCUI/adapter_ws/install/free_fleet_examples/share/free_fleet_examples/include/rmf_common.launch.xml \
+ros2 launch adapter_ws/install/free_fleet_examples/share/free_fleet_examples/include/rmf_common.launch.xml \
   use_sim_time:=false \
   headless:=false \
   initial_map:=LG \
@@ -61,11 +65,11 @@ This uses the generic RMF common launch with the lab building file.
 
 ## 1.5. Launch Lab Free Fleet Adapter
 
-Run on the central PC after RMF common is running:
+Run on the central PC after RMF common is running. Note: The launch command below uses the tb3_lab_fleet.yaml adapter config, whcih includes both robots in the fleet. 
 
 ```bash
-source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
-source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
+source adapter_ws/.venv/bin/activate
+source adapter_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ros2 launch free_fleet_adapter fleet_adapter.launch.xml \
@@ -74,8 +78,9 @@ ros2 launch free_fleet_adapter fleet_adapter.launch.xml \
   nav_graph_file:=/home/minhqphan/projects/MAMCUI/rmf_site_ws/maps/generated_nav_graphs/1.yaml
 ```
 
-Healthy adapter startup should include a message that the configured robot was
-added to the `tb3_lab` fleet and that its charger waypoint was set.
+To only launch the adapter with two robots up and running in the fleet, use the tb3_lab_two_robot_fleet.yaml
+
+Healthy adapter startup should include a message that the configured robot was added to the `tb3_lab` fleet and that its charger waypoint was set.
 
 ## 1.6. Task Dispatch
 
@@ -99,12 +104,12 @@ ros2 run rmf_demos_tasks dispatch_patrol \
   -st 0
 ```
 
-Four-waypoint loop, repeated 4 times:
+Four-waypoint loop, repeated 2 times:
 
 ```bash
 ros2 run rmf_demos_tasks dispatch_patrol \
   -p wp1 wp2 wp3 wp4 \
-  -n 4 \
+  -n 2 \
   -st 0
 ```
 
@@ -128,7 +133,7 @@ source /home/ubuntu/MAMCUI/robot_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ros2 launch robot_bringup robot.launch.py \
-  params_file:=/home/ubuntu/MAMCUI/robot_ws/install/robot_bringup/share/robot_bringup/config/nav2_waffle_pi_tb3_1.yaml
+  robot_id:=tb3_1
 ```
 
 Robot 2 Nav2 bringup:
@@ -138,11 +143,19 @@ source /home/ubuntu/MAMCUI/robot_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ros2 launch robot_bringup robot.launch.py \
-  params_file:=/home/ubuntu/MAMCUI/robot_ws/install/robot_bringup/share/robot_bringup/config/nav2_waffle_pi_tb3_2.yaml
+  robot_id:=tb3_2
 ```
 
-On each robot PC, verify that AMCL / Nav2 is publishing a believable map-frame
-pose before starting the fleet adapter:
+If you need to test a non-default Nav2 config, keep `robot_id:=...` and add an
+explicit override:
+
+```bash
+ros2 launch robot_bringup robot.launch.py \
+  robot_id:=tb3_1 \
+  params_file:=/home/ubuntu/MAMCUI/robot_ws/install/robot_bringup/share/robot_bringup/config/nav2_waffle_pi_rpp.yaml
+```
+
+On each robot PC, verify that AMCL / Nav2 is publishing a believable map-frame pose before starting the fleet adapter:
 
 ```bash
 ros2 run tf2_ros tf2_echo map base_footprint

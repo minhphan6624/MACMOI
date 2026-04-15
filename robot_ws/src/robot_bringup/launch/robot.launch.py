@@ -14,10 +14,10 @@ def generate_launch_description():
     launch_dir = os.path.join(package_share, 'launch')
 
     default_map = os.path.join(package_share, 'maps', 'aiml_lab.yaml')
-    default_nav2_params = os.path.join(package_share, 'config', 'nav2_waffle_pi.yaml')
     default_hw_params = os.path.join(package_share, 'config', 'hw_waffle_pi.yaml')
 
     usb_port = LaunchConfiguration('usb_port')
+    robot_id = LaunchConfiguration('robot_id')
     tb3_param_dir = LaunchConfiguration('tb3_param_dir')
     map_yaml_file = LaunchConfiguration('map')
     params_file = LaunchConfiguration('params_file')
@@ -42,14 +42,19 @@ def generate_launch_description():
             description='Full path to the TurtleBot3 hardware parameter file',
         ),
         DeclareLaunchArgument(
+            'robot_id',
+            default_value='tb3_1',
+            description='Robot identifier used to select the default Nav2 parameter file',
+        ),
+        DeclareLaunchArgument(
             'map',
             default_value=default_map,
             description='Full path to the map yaml file to load',
         ),
         DeclareLaunchArgument(
             'params_file',
-            default_value=default_nav2_params,
-            description='Full path to the Nav2 parameters file',
+            default_value='',
+            description='Optional full path to the Nav2 parameters file. Leave empty to select from robot_id',
         ),
         DeclareLaunchArgument(
             'use_sim_time',
@@ -105,6 +110,7 @@ def generate_launch_description():
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(os.path.join(launch_dir, 'nav2.launch.py')),
                     launch_arguments={
+                        'robot_id': robot_id,
                         'map': map_yaml_file,
                         'params_file': params_file,
                         'use_sim_time': use_sim_time,

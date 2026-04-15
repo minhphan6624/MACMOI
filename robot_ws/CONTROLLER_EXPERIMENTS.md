@@ -1,23 +1,26 @@
 # Nav2 Controller Experiments in `robot_ws`
 
-This workspace already supports swapping Nav2 controller plugins by changing the Nav2 parameter file passed into the launch files.
+This workspace supports swapping Nav2 controller plugins by changing the Nav2 parameter file passed into the launch files. The per-robot defaults now point at robot-specific RPP configs.
 
 ## Current setup
 
 - Main robot launch: `src/robot_bringup/launch/robot.launch.py`
 - Nav2-only launch: `src/robot_bringup/launch/nav2.launch.py`
-- Default Nav2 params: `src/robot_bringup/config/nav2_waffle_pi.yaml`
+- Per-robot Nav2 params:
+  - `src/robot_bringup/config/nav2_waffle_pi_tb3_1.yaml`
+  - `src/robot_bringup/config/nav2_waffle_pi_tb3_2.yaml`
+- Standalone experiment config: `src/robot_bringup/config/nav2_waffle_pi_rpp.yaml`
 
 The active controller is configured under:
 
 - `controller_server.ros__parameters.controller_plugins`
 - `controller_server.ros__parameters.FollowPath`
 
-Right now the default controller is:
+The per-robot configs now use:
 
 ```yaml
 FollowPath:
-  plugin: "dwb_core::DWBLocalPlanner"
+  plugin: "nav2_regulated_pure_pursuit_controller::RegulatedPurePursuitController"
 ```
 
 ## Controller plugins available on this machine
@@ -40,25 +43,35 @@ That means you can experiment with at least these plugin types:
 
 ## Fastest workflow
 
-1. Copy the default Nav2 config and give it a controller-specific name.
-2. Change only the `controller_server` block for the plugin you want to test.
-3. Launch the robot with `params_file:=...` pointing at that new YAML.
-4. Drive a few repeatable navigation trials and compare behavior.
+1. Launch the robot with `robot_id:=tb3_1` or `robot_id:=tb3_2` to use the matching per-robot RPP config.
+2. Override `params_file:=...` only when you want to test a different controller file.
+3. Drive a few repeatable navigation trials and compare behavior.
 
 Example:
-
-```bash
-cd /home/minhqphan/projects/MAMCUI/robot_ws/src/robot_bringup/config
-cp nav2_waffle_pi.yaml nav2_waffle_pi_rpp.yaml
-```
-
-Then launch with:
 
 ```bash
 cd /home/minhqphan/projects/MAMCUI/robot_ws
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 ros2 launch robot_bringup robot.launch.py \
+  robot_id:=tb3_1
+```
+
+For the second robot:
+
+```bash
+cd /home/minhqphan/projects/MAMCUI/robot_ws
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+ros2 launch robot_bringup robot.launch.py \
+  robot_id:=tb3_2
+```
+
+You can still override the file directly:
+
+```bash
+ros2 launch robot_bringup robot.launch.py \
+  robot_id:=tb3_1 \
   params_file:=/home/minhqphan/projects/MAMCUI/robot_ws/src/robot_bringup/config/nav2_waffle_pi_rpp.yaml
 ```
 
@@ -66,9 +79,9 @@ You can do the same with `nav2.launch.py` if hardware is already running separat
 
 ## Recommended experiments
 
-### 1. Baseline: DWB
+### 1. Baseline: per-robot RPP
 
-Keep the existing config as your baseline. It is already tuned for the TurtleBot3 differential-drive limits in this workspace.
+The default `tb3_1` and `tb3_2` configs now use regulated pure pursuit as the main controller.
 
 ### 2. Regulated Pure Pursuit
 
