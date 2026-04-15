@@ -162,7 +162,7 @@ The launch command referenced an old building filename.
 Current building file:
 
 ```text
-/home/minhqphan/projects/MAMCUI/rmf_site_ws/maps/maps/aiml-lab.building.yaml
+/home/minhqphan/projects/MAMCUI/adapter_ws/src/rmf_asset/maps/aiml-lab.building.yaml
 ```
 
 Result after fix:
@@ -194,7 +194,7 @@ Update `reference_coordinates.rmf` in the fleet config to use waypoint
 coordinates from:
 
 ```text
-/home/minhqphan/projects/MAMCUI/rmf_site_ws/maps/generated_nav_graphs/1.yaml
+/home/minhqphan/projects/MAMCUI/adapter_ws/src/rmf_asset/generated_nav_graphs/1.yaml
 ```
 
 Result after fix:

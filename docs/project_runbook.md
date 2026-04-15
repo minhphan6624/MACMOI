@@ -47,21 +47,22 @@ zenoh-bridge-ros2dds -c ~/zenoh/config/<robot_bridge_config>.json5
 
 ## 1.4. Launch RMF Common for the Lab
 
-Run on the central PC before launching the adapter. This uses the rmf common launch file from the free_fleet_examples package:
+Run on the central PC before launching the adapter. This uses the project-owned `rmf_asset` RMF common launch:
 
 ```bash
 source adapter_ws/.venv/bin/activate
 source adapter_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 launch adapter_ws/install/free_fleet_examples/share/free_fleet_examples/include/rmf_common.launch.xml \
+export RMF_ASSET_SHARE=$(ros2 pkg prefix rmf_asset)/share/rmf_asset
+
+ros2 launch rmf_asset aiml_lab_rmf_common.launch.xml \
   use_sim_time:=false \
   headless:=false \
-  initial_map:=LG \
-  config_file:=/home/minhqphan/projects/MAMCUI/rmf_site_ws/maps/maps/aiml-lab.building.yaml
+  initial_map:=LG
 ```
 
-This uses the generic RMF common launch with the lab building file.
+This launch resolves the lab building file from the installed `rmf_asset` package.
 
 ## 1.5. Launch Lab Free Fleet Adapter
 
@@ -71,11 +72,12 @@ Run on the central PC after RMF common is running. Note: The launch command belo
 source adapter_ws/.venv/bin/activate
 source adapter_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export RMF_ASSET_SHARE=$(ros2 pkg prefix rmf_asset)/share/rmf_asset
 
 ros2 launch free_fleet_adapter fleet_adapter.launch.xml \
   use_sim_time:=false \
   config_file:=/home/minhqphan/projects/MAMCUI/adapter_ws/config/free_fleet/tb3_lab_fleet.yaml \
-  nav_graph_file:=/home/minhqphan/projects/MAMCUI/rmf_site_ws/maps/generated_nav_graphs/1.yaml
+  nav_graph_file:=$RMF_ASSET_SHARE/generated_nav_graphs/1.yaml
 ```
 
 To only launch the adapter with two robots up and running in the fleet, use the tb3_lab_two_robot_fleet.yaml
@@ -111,6 +113,53 @@ ros2 run rmf_demos_tasks dispatch_patrol \
   -p wp1 wp2 wp3 wp4 \
   -n 2 \
   -st 0
+```
+
+Dispatch two patrol tasks to the same robot at nearly the same time:
+
+Note: these two requests can be submitted simultaneously, but a single robot
+will still execute them one after the other. In RMF terms, both tasks may be
+accepted concurrently while the robot queues them.
+
+Terminal A:
+
+```bash
+ros2 run rmf_demos_tasks dispatch_patrol \
+  -F tb3_lab \
+  -R tb3_1 \
+  -p wp1 wp2 \
+  -n 2 \
+  -st 0
+```
+
+Terminal B:
+
+```bash
+ros2 run rmf_demos_tasks dispatch_patrol \
+  -F tb3_lab \
+  -R tb3_1 \
+  -p wp3 wp4 \
+  -n 2 \
+  -st 0
+```
+
+If you want the two requests to be submitted from one shell with a slight time
+offset, use:
+
+```bash
+ros2 run rmf_demos_tasks dispatch_patrol \
+  -F tb3_lab \
+  -R tb3_1 \
+  -p wp1 wp2 \
+  -n 2 \
+  -st 0
+
+ros2 run rmf_demos_tasks dispatch_patrol \
+  -F tb3_lab \
+  -R tb3_1 \
+  -p wp3 wp4 \
+  -n 2 \
+  -st 2
 ```
 
 Watch the fleet adapter terminal for:
@@ -199,11 +248,12 @@ the two-robot fleet config:
 source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
 source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export RMF_ASSET_SHARE=$(ros2 pkg prefix rmf_asset)/share/rmf_asset
 
 ros2 launch free_fleet_adapter fleet_adapter.launch.xml \
   use_sim_time:=false \
   config_file:=/home/minhqphan/projects/MAMCUI/adapter_ws/config/free_fleet/tb3_lab_two_robot_fleet.yaml \
-  nav_graph_file:=/home/minhqphan/projects/MAMCUI/rmf_site_ws/maps/generated_nav_graphs/1.yaml
+  nav_graph_file:=$RMF_ASSET_SHARE/generated_nav_graphs/1.yaml
 ```
 
 Both configured robots must be on, localized, bridged, and publishing TF before
@@ -247,6 +297,7 @@ Use this in central-PC shells that run RMF or `free_fleet`:
 source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
 source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export RMF_ASSET_SHARE=$(ros2 pkg prefix rmf_asset)/share/rmf_asset
 ```
 
 If using a custom ROS domain, export the same value in every central-PC shell that participates in RMF:
@@ -300,14 +351,14 @@ wp4 -> [ 0.6056, -0.0110]
 
 ## Generate RMF Nav Graph
 
-This should be run after editing the lab `.building.yaml` to generate a navigation graph to be used for launching free-fleet:
+This should be run after editing the lab `.building.yaml` in `adapter_ws/src/rmf_asset/maps` to regenerate the navigation graph used by `free_fleet`:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
 
 ros2 run rmf_building_map_tools building_map_generator nav \
-  /home/minhqphan/projects/MAMCUI/rmf_site_ws/maps/maps/aiml-lab.building.yaml \
-  /home/minhqphan/projects/MAMCUI/rmf_site_ws/maps/generated_nav_graphs
+  /home/minhqphan/projects/MAMCUI/adapter_ws/src/rmf_asset/maps/aiml-lab.building.yaml \
+  /home/minhqphan/projects/MAMCUI/adapter_ws/src/rmf_asset/generated_nav_graphs
 ```
 
 # Launch Stock Free Fleet Example Control Test
@@ -353,7 +404,7 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 gdb --args /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/python3 \
   /home/minhqphan/projects/MAMCUI/adapter_ws/install/free_fleet_adapter/lib/free_fleet_adapter/fleet_adapter.py \
   -c /home/minhqphan/projects/MAMCUI/adapter_ws/config/free_fleet/tb3_lab_fleet.yaml \
-  -n /home/minhqphan/projects/MAMCUI/rmf_site_ws/maps/generated_nav_graphs/1.yaml
+  -n $(ros2 pkg prefix rmf_asset)/share/rmf_asset/generated_nav_graphs/1.yaml
 ```
 
 At the `(gdb)` prompt:

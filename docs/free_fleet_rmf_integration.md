@@ -64,21 +64,19 @@ Use the repository workspaces as separate layers:
 robot_ws/
   Robot-local bringup, TurtleBot3 hardware config, Nav2 config, Nav2 map.
 
-rmf_site_ws/
-  RMF building map source, RMF drawing, generated RMF navigation graph.
-
 adapter_ws/
-  Built free_fleet workspace, adapter-side fleet config, future launch/deployment glue.
+  Built free_fleet workspace, adapter-side fleet config, and the project-owned
+  `rmf_asset` package for RMF building maps/nav graphs/launch glue.
 ```
 Do not move the runtime robot-side Zenoh bridge config off the Pi. It can stay in `~/zenoh/config` on the robot. Optionally copy a template into this repo later for version control.
 
 # 3.  Current Site / Map State
 
-Lab building file:` /rmf_site_ws/maps/maps/aiml-lab.building.yaml`
+Lab building file: `adapter_ws/src/rmf_asset/maps/aiml-lab.building.yaml`
 
-Lab drawing:` /rmf_site_ws/maps/maps/aiml-lab.png`
+Lab drawing: `adapter_ws/src/rmf_asset/maps/aiml-lab.png`
 
-Generated RMF nav graph: `/rmf_site_ws/maps/generated_nav_graphs/1.yaml`
+Generated RMF nav graph: `adapter_ws/src/rmf_asset/generated_nav_graphs/1.yaml`
 
 The current RMF graph is intentionally minimal for smoke testing, which includes 4 points  `wp1 <-> wp2 <-> wp3 <-> wp4 <-> wp1 `
 
