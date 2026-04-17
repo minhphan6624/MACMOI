@@ -16,6 +16,7 @@ def generate_launch_description():
     building_file = PathJoinSubstitution([ system_pkg, 'maps', 'aiml-lab.building.yaml'])
     nav_graph_file = PathJoinSubstitution([system_pkg, 'nav_graphs', 'graph_0.yaml'])
     rmf_core_launch = PathJoinSubstitution([system_pkg, 'launch', 'rmf_core.launch.xml'])
+    
     fleet_launch = PathJoinSubstitution([fleet_pkg, 'launch', 'aiml_lab_ff_bringup.launch.xml'])
 
     return LaunchDescription([
@@ -28,7 +29,7 @@ def generate_launch_description():
             launch_arguments={
                 'use_sim_time': use_sim_time,
                 'config_file': building_file,
-                'initial_map': 'L1',
+                'initial_map': 'LG',
                 'headless': headless,
             }.items()
         ),
