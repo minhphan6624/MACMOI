@@ -65,7 +65,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'robot_id',
-            default_value='tb3_1',
+            default_value='',
             description='Robot identifier used to select the default Nav2 parameter file',
         ),
         DeclareLaunchArgument(

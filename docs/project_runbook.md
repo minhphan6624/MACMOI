@@ -3,57 +3,152 @@
 Important setup notes and commands for the TurtleBot3 / Nav2 / Open-RMF /
 Free Fleet integration.
 
-# 1. Intended Startup Order
+# 1. Common Environments
 
-For the physical robot smoke test, start processes in this order:
+## 1.1. Central PC Environment
 
-1. Robot PC: robot hardware / Nav2 bringup
-2. Central PC: run zenoh router via: `zenohd`
-3. Robot PC: run zenoh bridge `zenoh-bridge-ros2dds`
-4. Central PC: RMF common launch for the lab building file
-5. Central PC: lab `free_fleet_adapter`
-6. Central PC: dispatch a small loop / patrol task only after the adapter stays up
-
-## 1.1. Launch Physical Robot Bringup / Nav2
-
-Run on the robot PC / Raspberry Pi, adjusting source paths if the workspace is
-deployed at a different location:
+Use this in central-PC shells that run RMF, `free_fleet`, or RMF task dispatch:
 
 ```bash
-source robot_ws/install/setup.bash
+source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
+source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export RMF_ASSET_SHARE=$(ros2 pkg prefix rmf_asset)/share/rmf_asset
+```
+
+If using a custom ROS domain, export the same value in every central-PC shell
+that participates in RMF:
+
+```bash
+export ROS_DOMAIN_ID=<domain_id>
+```
+
+## 1.2. Robot PC Environment
+
+Use this on each robot PC / Raspberry Pi:
+
+```bash
+source /home/ubuntu/MAMCUI/robot_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+```
+
+# 2. Build and Asset Maintenance
+
+## 2.1. Build `adapter_ws`
+
+Run on the central PC after cloning the `free_fleet` repository into
+`adapter_ws/src`:
+
+```bash
+cd /home/minhqphan/projects/MAMCUI/adapter_ws
+source /opt/ros/jazzy/setup.bash
+source .venv/bin/activate
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+rosdep install --from-paths src --ignore-src --rosdistro jazzy -yr
+colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
+```
+
+If the venv is active during builds, install ROS build-helper Python packages in
+that venv as needed, e.g. `catkin_pkg`.
+
+## 2.2. Build `robot_ws`
+
+If `robot_ws` has not been built on the robot PC, build it with `colcon` before
+starting robot bringup.
+
+## 2.3. Regenerate the RMF Nav Graph
+
+Run this after editing the lab `.building.yaml` in `adapter_ws/src/rmf_asset`:
+
+```bash
+source /opt/ros/jazzy/setup.bash
+
+ros2 run rmf_building_map_tools building_map_generator nav \
+  $HOME/projects/MAMCUIadapter_ws/src/rmf_asset/maps/aiml-lab.building.yaml \
+  $HOME/projects/MAMCUI/adapter_ws/src/rmf_asset/nav_graphs
+```
+
+The current lab adapter commands use the installed nav graph:
+
+```bash
+$RMF_ASSET_SHARE/nav_graphs/1.yaml
+```
+
+# 3. Single-Robot System Test
+
+Use this flow for a physical smoke test with one TurtleBot3. The current
+single-robot fleet config is:
+
+```text
+/home/minhqphan/projects/MAMCUI/adapter_ws/config/free_fleet/tb3_lab_fleet.yaml
+```
+
+That config currently enables `tb3_1`.
+
+## 3.1. Startup Order
+
+Start processes in this order:
+
+1. Robot PC: robot hardware / Nav2 bringup
+2. Central PC: Zenoh router
+3. Robot PC: Zenoh ROS 2 bridge
+4. Central PC: RMF common for the lab
+5. Central PC: lab `free_fleet_adapter`
+6. Central PC: dispatch a small patrol task only after the adapter stays up
+
+## 3.2. Launch Robot Bringup / Nav2
+
+Run on the robot PC:
+
+```bash
+source /home/ubuntu/MAMCUI/robot_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ros2 launch robot_bringup robot.launch.py robot_id:=tb3_1
 ```
 
-Use `robot_id:=tb3_2` on the second robot. The launch script now selects the
-matching robot-specific Nav2 YAML by default, and those per-robot configs use
-regulated pure pursuit as the main controller plugin.
-
-## 1.2. Start Zenoh Router
-
-Run on the central PC: `zenohd` (Run this where the zeno binary was installed, likely `~/zenoh`)
-If using a standalone downloaded router binary, run that binary instead.
-
-## 1.3. Start Zenoh ROS 2 Bridge
-
-Run on the robot PC / Raspberry Pi.
+If you need to test a non-default Nav2 config, keep `robot_id:=...` and add an
+explicit override:
 
 ```bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-zenoh-bridge-ros2dds -c ~/zenoh/config/<robot_bridge_config>.json5
+ros2 launch robot_bringup robot.launch.py \
+  robot_id:=tb3_1 \
+  params_file:=$HOME/MAMCUI/robot_ws/install/robot_bringup/share/robot_bringup/config/nav2_waffle_pi_rpp.yaml
 ```
 
-## 1.4. Launch RMF Common for the Lab
+## 3.3. Start the Zenoh Router
 
-Run on the central PC before launching the adapter. This uses the project-owned `rmf_asset` RMF common launch:
+Run on the central PC:
 
 ```bash
-source adapter_ws/.venv/bin/activate
-source adapter_ws/install/setup.bash
+zenohd
+```
+
+If using a standalone downloaded router binary, run that binary instead.
+
+## 3.4. Start the Zenoh ROS 2 Bridge
+
+Run on the robot PC:
+
+```bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
+zenoh-bridge-ros2dds -c ~/zenoh/config/tb3_robot1_zenoh.json5
+# zenoh-bridge-ros2dds -c ~/zenoh/config/tb3_robot1_zenoh.json5
+
+```
+
+The bridge namespace must match the robot key in the fleet config.
+
+## 3.5. Launch RMF Common for the Lab
+
+Run on the central PC before launching the adapter:
+
+```bash
+source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
+source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export RMF_ASSET_SHARE=$(ros2 pkg prefix rmf_asset)/share/rmf_asset
 
 ros2 launch rmf_asset aiml_lab_rmf_common.launch.xml \
@@ -62,32 +157,29 @@ ros2 launch rmf_asset aiml_lab_rmf_common.launch.xml \
   initial_map:=LG
 ```
 
-This launch resolves the lab building file from the installed `rmf_asset` package.
+## 3.6. Launch the Single-Robot Fleet Adapter
 
-## 1.5. Launch Lab Free Fleet Adapter
-
-Run on the central PC after RMF common is running. Note: The launch command below uses the tb3_lab_fleet.yaml adapter config, whcih includes both robots in the fleet. 
+Run on the central PC after RMF common is running:
 
 ```bash
-source adapter_ws/.venv/bin/activate
-source adapter_ws/install/setup.bash
+source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
+source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export RMF_ASSET_SHARE=$(ros2 pkg prefix rmf_asset)/share/rmf_asset
 
 ros2 launch free_fleet_adapter fleet_adapter.launch.xml \
   use_sim_time:=false \
   config_file:=/home/minhqphan/projects/MAMCUI/adapter_ws/config/free_fleet/tb3_lab_fleet.yaml \
-  nav_graph_file:=$RMF_ASSET_SHARE/generated_nav_graphs/1.yaml
+  nav_graph_file:=$RMF_ASSET_SHARE/nav_graphs/1.yaml
 ```
 
-To only launch the adapter with two robots up and running in the fleet, use the tb3_lab_two_robot_fleet.yaml
+Healthy adapter startup should include a message that `tb3_1` was added to the
+`tb3_lab` fleet and that its charger waypoint was set.
 
-Healthy adapter startup should include a message that the configured robot was added to the `tb3_lab` fleet and that its charger waypoint was set.
+## 3.7. Dispatch a Small RMF Task
 
-## 1.6. Task Dispatch
-
-Only dispatch RMF tasks after the robot has been localized, direct Nav2 goals
-work, RMF common is running, and the free fleet adapter has added the robot.
+Only dispatch RMF tasks after the robot has localized, direct Nav2 goals work,
+RMF common is running, and the free fleet adapter has added the robot.
 
 Central-PC environment for task dispatch:
 
@@ -115,13 +207,143 @@ ros2 run rmf_demos_tasks dispatch_patrol \
   -st 0
 ```
 
-Dispatch two patrol tasks to the same robot at nearly the same time:
+# 4. Two-Robot System Test
 
-Note: these two requests can be submitted simultaneously, but a single robot
-will still execute them one after the other. In RMF terms, both tasks may be
-accepted concurrently while the robot queues them.
+Use this flow when testing both TurtleBot3 robots together. The current
+two-robot fleet config is:
 
-Terminal A:
+```text
+/home/minhqphan/projects/MAMCUI/adapter_ws/config/free_fleet/tb3_lab_two_robot_fleet.yaml
+```
+
+That config currently enables both `tb3_1` and `tb3_2`.
+
+## 4.1. Startup Order
+
+Start processes in this order:
+
+1. Robot 1 PC: robot hardware / Nav2 bringup
+2. Robot 2 PC: robot hardware / Nav2 bringup
+3. Central PC: Zenoh router
+4. Robot 1 PC: Zenoh ROS 2 bridge
+5. Robot 2 PC: Zenoh ROS 2 bridge
+6. Central PC: RMF common for the lab
+7. Central PC: two-robot `free_fleet_adapter`
+8. Central PC: dispatch RMF tasks only after both robots appear in fleet state
+
+## 4.2. Launch Robot 1 Bringup / Nav2
+
+Run on robot 1:
+
+```bash
+source /home/ubuntu/MAMCUI/robot_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+ros2 launch robot_bringup robot.launch.py robot_id:=tb3_1
+```
+
+## 4.3. Launch Robot 2 Bringup / Nav2
+
+Run on robot 2:
+
+```bash
+source /home/ubuntu/MAMCUI/robot_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+ros2 launch robot_bringup robot.launch.py robot_id:=tb3_2
+```
+
+## 4.4. Start the Zenoh Router
+
+Run on the central PC:
+
+```bash
+zenohd
+```
+
+## 4.5. Start a Zenoh ROS 2 Bridge on Each Robot
+
+Run on each robot PC:
+
+```bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+zenoh-bridge-ros2dds -c ~/zenoh/config/tb3_robot1_zenoh.json5
+# zenoh-bridge-ros2dds -c ~/zenoh/config/tb3_robot2_zenoh.json5
+```
+
+The first robot's bridge config should expose Nav2 as namespace `tb3_1`. The second robot's bridge config should expose Nav2 as namespace `tb3_2`.
+
+## 4.6. Launch RMF Common for the Lab
+
+Run on the central PC before launching the adapter:
+
+```bash
+source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
+source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export RMF_ASSET_SHARE=$(ros2 pkg prefix rmf_asset)/share/rmf_asset
+
+ros2 launch rmf_asset aiml_lab_rmf_common.launch.xml \
+  use_sim_time:=false \
+  headless:=false \
+  initial_map:=LG
+```
+
+## 4.7. Launch the Two-Robot Fleet Adapter
+
+Run on the central PC after RMF common is running:
+
+```bash
+source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
+source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export RMF_ASSET_SHARE=$(ros2 pkg prefix rmf_asset)/share/rmf_asset
+
+ros2 launch free_fleet_adapter fleet_adapter.launch.xml \
+  use_sim_time:=false \
+  config_file:=/home/minhqphan/projects/MAMCUI/adapter_ws/config/free_fleet/tb3_lab_two_robot_fleet.yaml \
+  nav_graph_file:=$RMF_ASSET_SHARE/nav_graphs/1.yaml
+```
+
+Both configured robots must be on, localized, bridged, and publishing TF before
+the two-robot adapter starts. Healthy startup should add both `tb3_1` and
+`tb3_2` to fleet `tb3_lab`.
+
+The current charger assignment is:
+
+```text
+tb3_1 -> wp1
+tb3_2 -> wp2
+```
+
+## 4.8. Dispatch Two-Robot RMF Tasks
+
+Dispatch one patrol task per robot so both robots patrol different waypoint
+pairs at the same time:
+
+```bash
+ros2 run rmf_demos_tasks dispatch_patrol \
+  -F tb3_lab \
+  -R tb3_1 \
+  -p wp1 wp4 \
+  -n 1 \
+  -st 0
+```
+
+```bash
+ros2 run rmf_demos_tasks dispatch_patrol \
+  -F tb3_lab \
+  -R tb3_2 \
+  -p wp2 wp3 \
+  -n 1 \
+  -st 0
+```
+
+Submit those from separate terminals, or run them sequentially from the central
+PC once both robots are visible in `/fleet_states`.
+
+Dispatch a simple patrol task to a specific robot:
 
 ```bash
 ros2 run rmf_demos_tasks dispatch_patrol \
@@ -132,7 +354,7 @@ ros2 run rmf_demos_tasks dispatch_patrol \
   -st 0
 ```
 
-Terminal B:
+Dispatch a second task to the same robot from another terminal:
 
 ```bash
 ros2 run rmf_demos_tasks dispatch_patrol \
@@ -143,8 +365,7 @@ ros2 run rmf_demos_tasks dispatch_patrol \
   -st 0
 ```
 
-If you want the two requests to be submitted from one shell with a slight time
-offset, use:
+If you want both requests submitted from one shell with a slight offset, use:
 
 ```bash
 ros2 run rmf_demos_tasks dispatch_patrol \
@@ -162,49 +383,15 @@ ros2 run rmf_demos_tasks dispatch_patrol \
   -st 2
 ```
 
-Watch the fleet adapter terminal for:
+A single robot will still execute accepted tasks one after the other.
 
-```text
-Commanding [<robot_name>] to navigate ...
-Navigation goal [...] accepted
-Navigation goal [...] reached
-```
+# 5. Verification and Checks
 
-## 1.7. Two-Robot Physical Smoke Test
+Put all checks here after the system is up.
 
-Use the normal one-robot commands above when testing one TurtleBot3. For a
-two-robot test, start both robots first and use the two-robot fleet config.
+## 5.1. Verify Robot Localization
 
-Robot 1 Nav2 bringup:
-
-```bash
-source /home/ubuntu/MAMCUI/robot_ws/install/setup.bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-ros2 launch robot_bringup robot.launch.py \
-  robot_id:=tb3_1
-```
-
-Robot 2 Nav2 bringup:
-
-```bash
-source /home/ubuntu/MAMCUI/robot_ws/install/setup.bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-ros2 launch robot_bringup robot.launch.py \
-  robot_id:=tb3_2
-```
-
-If you need to test a non-default Nav2 config, keep `robot_id:=...` and add an
-explicit override:
-
-```bash
-ros2 launch robot_bringup robot.launch.py \
-  robot_id:=tb3_1 \
-  params_file:=/home/ubuntu/MAMCUI/robot_ws/install/robot_bringup/share/robot_bringup/config/nav2_waffle_pi_rpp.yaml
-```
-
-On each robot PC, verify that AMCL / Nav2 is publishing a believable map-frame pose before starting the fleet adapter:
+Run on each robot PC before starting the fleet adapter:
 
 ```bash
 ros2 run tf2_ros tf2_echo map base_footprint
@@ -217,12 +404,27 @@ tb3_1 -> [0.0, 1.0, 0.0]
 tb3_2 -> [1.0, 1.0, 0.0]
 ```
 
-Start the Zenoh bridge on each robot PC. The first robot's bridge config should
-expose Nav2 as namespace `tb3_1`; the second robot's bridge config should
-expose Nav2 as namespace `tb3_2`.
+The robot should localize and accept manual Nav2 goals before testing RMF.
 
-Before starting RMF tasks, send direct Nav2 goals through Zenoh from the central
-PC:
+## 5.2. Verify Nav2 Through Zenoh
+
+Run on the central PC after `zenohd`, the robot-side bridge, and robot Nav2 are
+running.
+
+Single-robot example:
+
+```bash
+source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
+source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
+
+ros2 run free_fleet_examples nav2_send_navigate_to_pose.py \
+  --frame-id map \
+  --namespace tb3_1 \
+  -x 0.5564 \
+  -y 2.0371
+```
+
+Two-robot example:
 
 ```bash
 source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
@@ -241,105 +443,6 @@ ros2 run free_fleet_examples nav2_send_navigate_to_pose.py \
   -y 2.1682
 ```
 
-Launch RMF common using the command in section 1.4, then launch the adapter with
-the two-robot fleet config:
-
-```bash
-source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
-source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export RMF_ASSET_SHARE=$(ros2 pkg prefix rmf_asset)/share/rmf_asset
-
-ros2 launch free_fleet_adapter fleet_adapter.launch.xml \
-  use_sim_time:=false \
-  config_file:=/home/minhqphan/projects/MAMCUI/adapter_ws/config/free_fleet/tb3_lab_two_robot_fleet.yaml \
-  nav_graph_file:=$RMF_ASSET_SHARE/generated_nav_graphs/1.yaml
-```
-
-Both configured robots must be on, localized, bridged, and publishing TF before
-the two-robot adapter starts. Healthy startup should add both `tb3_1` and
-`tb3_2` to fleet `tb3_lab`.
-
-The current two-robot charger assignment is:
-
-```text
-tb3_1 -> wp1
-tb3_2 -> wp2
-```
-
-# 2. Build scripts
-
-## 2.1. Build Free Fleet
-
-After cloning the free-fleet rpository to the src directory of the adapter_ws workspace, Run this to build the free_fleet packages on the central PC:
-
-```bash
-cd /home/minhqphan/projects/MAMCUI/adapter_ws
-source /opt/ros/jazzy/setup.bash
-source .venv/bin/activate
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-rosdep install --from-paths src --ignore-src --rosdistro jazzy -yr
-colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
-```
-
-If the venv is active during builds, make sure to  install ROS build-helper Python packages in that venv, e.g. `catkin_pkg`.
-
-## 2.2. Build robot workspace
-
-If the robot_ws has not been built, build it with colcon
-
-# 3. Common Central-PC Environment
-
-Use this in central-PC shells that run RMF or `free_fleet`:
-
-```bash
-source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
-source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export RMF_ASSET_SHARE=$(ros2 pkg prefix rmf_asset)/share/rmf_asset
-```
-
-If using a custom ROS domain, export the same value in every central-PC shell that participates in RMF:
-
-```bash
-export ROS_DOMAIN_ID=<domain_id>
-```
-
-# 4. Other utilities
-The robot should localize and accept manual Nav2 goals before testing RMF.
-
-If using a standalone downloaded bridge binary, run the extracted binary instead of relying on `PATH`.
-The bridge namespace must match the robot key in the fleet config. The current
-configured robot key is: `tb3_2`.
-
-## Check RMF Fleet State
-
-Run on the central PC after RMF common and the adapter are running:
-
-```bash
-ros2 topic echo /fleet_states
-```
-
-Expect fleet `tb3_lab` and the configured robot name.
-
-## Test Nav2 Through Zenoh
-
-Run on the central PC after `zenohd`, the robot-side bridge, and robot Nav2 are
-running. Replace `tb3_2` if the bridge namespace / fleet robot name is
-different.
-
-```bash
-source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
-source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
-
-ros2 run free_fleet_examples nav2_send_navigate_to_pose.py \
-  --frame-id map \
-  --namespace tb3_2 \
-  -x 0.5564 \
-  -y 2.0371
-```
-
 Known waypoint-to-Nav2-map correspondences:
 
 ```text
@@ -349,19 +452,61 @@ wp3 -> [-2.3108,  0.2512]
 wp4 -> [ 0.6056, -0.0110]
 ```
 
-## Generate RMF Nav Graph
+## 5.3. Verify RMF Fleet State
 
-This should be run after editing the lab `.building.yaml` in `adapter_ws/src/rmf_asset/maps` to regenerate the navigation graph used by `free_fleet`:
+Run on the central PC after RMF common and the adapter are running:
+
+```bash
+ros2 topic echo /fleet_states
+```
+
+Expect fleet `tb3_lab` and the configured robot names.
+
+## 5.4. Verify Adapter Command Flow
+
+Watch the fleet adapter terminal for:
+
+```text
+Commanding [<robot_name>] to navigate ...
+Navigation goal [...] accepted
+Navigation goal [...] reached
+```
+
+## 5.5. Debug the Adapter with `gdb`
+
+Run while the matching RMF common launch is already running.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
+source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
+source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 run rmf_building_map_tools building_map_generator nav \
-  /home/minhqphan/projects/MAMCUI/adapter_ws/src/rmf_asset/maps/aiml-lab.building.yaml \
-  /home/minhqphan/projects/MAMCUI/adapter_ws/src/rmf_asset/generated_nav_graphs
+gdb --args /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/python3 \
+  /home/minhqphan/projects/MAMCUI/adapter_ws/install/free_fleet_adapter/lib/free_fleet_adapter/fleet_adapter.py \
+  -c /home/minhqphan/projects/MAMCUI/adapter_ws/config/free_fleet/tb3_lab_fleet.yaml \
+  -n $(ros2 pkg prefix rmf_asset)/share/rmf_asset/nav_graphs/1.yaml
 ```
 
-# Launch Stock Free Fleet Example Control Test
+At the `(gdb)` prompt:
+
+```gdb
+run
+```
+
+After the crash:
+
+```gdb
+bt
+```
+
+Save the `bt` backtrace.
+
+Historical issue: the adapter segfaulted with exit code `-11` in one
+environment. That was resolved by using a compatible `numpy` version. If this
+returns, debug with `gdb` before editing maps or bridge configs.
+
+## 5.6. Stock Free Fleet Example Control Test
 
 RMF common terminal:
 
@@ -384,39 +529,3 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ros2 launch free_fleet_examples nav2_tb3_simulation_fleet_adapter.launch.xml
 ```
-
-Historical issue: the adapter segfaulted with exit code `-11` in one
-environment. That was resolved by using a compatible `numpy` version. If this
-returns, debug with `gdb` before editing maps or bridge configs.
-
-## Debug Adapter Crash with gdb
-
-Run while the matching RMF common launch is already running.
-
-Lab adapter under `gdb`:
-
-```bash
-source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/activate
-source /home/minhqphan/projects/MAMCUI/adapter_ws/install/setup.bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-gdb --args /home/minhqphan/projects/MAMCUI/adapter_ws/.venv/bin/python3 \
-  /home/minhqphan/projects/MAMCUI/adapter_ws/install/free_fleet_adapter/lib/free_fleet_adapter/fleet_adapter.py \
-  -c /home/minhqphan/projects/MAMCUI/adapter_ws/config/free_fleet/tb3_lab_fleet.yaml \
-  -n $(ros2 pkg prefix rmf_asset)/share/rmf_asset/generated_nav_graphs/1.yaml
-```
-
-At the `(gdb)` prompt:
-
-```gdb
-run
-```
-
-After the crash:
-
-```gdb
-bt
-```
-
-Save the `bt` backtrace.
