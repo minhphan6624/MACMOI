@@ -2,13 +2,20 @@
 <!-- Launch file for free_fleet adapters in the AIML Lab with generated nav graphs -->
 <launch>
   <arg name="server_uri" default="" description="The URI of the api server to transmit state and task information."/>
+  <arg name="nav_graph_file" default="$(find-pkg-share system_rmf_bringup)/nav_graphs/graph_0.yaml"/>
+  <arg name="config_file" default="$(find-pkg-share free_fleet_bringup)/config/fleet/aiml_lab_multi_tb3_fleet.yaml" 
+      description="Fleet adapter config file"/>
+  <arg name="use_sim_time" default="false" description="Use the /clock topic for time to sync with simulation"/>
+
 
   <group>
     <include file="$(find-pkg-share free_fleet_adapter)/fleet_adapter.launch.xml">
-      <arg name="use_sim_time" value="false"/>
-       <!--TODO: Fix the path, replace with actual paths to files once package is created  -->
-      <arg name="nav_graph_file" value="$(find-pkg-share system_rmf_bringup)/nav_graphs/graph_0.yaml" />
-      <arg name="config_file" value="$(find-pkg-share free_fleet_bringup)/config/fleet/aiml_lab_multi_tb3_fleet.yaml"/>
+      
+      <arg name="use_sim_time" value="$(var use_sim_time)"/>
+
+      <arg name="nav_graph_file" value="$(var nav_graph_file)" />
+      <arg name="config_file" value="$(var config_file)"/>
+      
       <arg name="server_uri" value="$(var server_uri)"/>
     </include>
   </group>
