@@ -12,7 +12,7 @@ find_package(ament_cmake REQUIRED)
 # find_package(<dependency> REQUIRED)
 
 install(
-  DIRECTORY launch maps nav_graphs
+  DIRECTORY launch maps nav_graphs config
   DESTINATION share/${PROJECT_NAME}
 )
 

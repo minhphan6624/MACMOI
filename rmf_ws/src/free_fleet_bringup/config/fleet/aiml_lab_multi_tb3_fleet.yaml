@@ -39,7 +39,7 @@ rmf_fleet:
       robot_frame: "base_footprint"
       maps:
         LG:
-          map_url: "/home/minhqphan/projects/MAMCUI/robot_ws/src/robot_bringup/maps/aiml_lab.yaml"
+          map_url: "/home/minhqphan/projects/MACMOI/robot_ws/src/robot_bringup/maps/aiml_lab.yaml"
     tb3_2:
       charger: "wp2"
       responsive_wait: false
@@ -50,7 +50,7 @@ rmf_fleet:
       robot_frame: "base_footprint"
       maps:
         LG:
-          map_url: "/home/minhqphan/projects/MAMCUI/robot_ws/src/robot_bringup/maps/aiml_lab.yaml"
+          map_url: "/home/minhqphan/projects/MACMOI/robot_ws/src/robot_bringup/maps/aiml_lab.yaml"
   robot_state_update_frequency: 10.0
 
 reference_coordinates:
