@@ -74,30 +74,3 @@ class MissionState:
     packages: dict[str, PackageRecord]
     transfer: TransferZoneState
     robots: dict[str, RobotMissionState]
-
-
-def create_mission(
-    mission_id: str,
-    total_packages: int,
-    upstream_robot: str = UPSTREAM_ROBOT,
-    downstream_robot: str = DOWNSTREAM_ROBOT,
-) -> MissionState:
-    packages = {
-        f"P{i}": PackageRecord(package_id=f"P{i}")
-        for i in range(1, total_packages + 1)
-    }
-
-    return MissionState(
-        mission_id=mission_id,
-        status=MissionStatus.READY,
-        total_packages=total_packages,
-        delivered_count=0,
-        upstream_robot_id=upstream_robot,
-        downstream_robot_id=downstream_robot,
-        packages=packages,
-        transfer=TransferZoneState(),
-        robots={
-            upstream_robot: RobotMissionState(robot_id=upstream_robot),
-            downstream_robot: RobotMissionState(robot_id=downstream_robot),
-        },
-    )
