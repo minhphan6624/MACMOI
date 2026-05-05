@@ -14,8 +14,6 @@ simple rule evaluator
 RMF patrol/loop-style waypoint tasks
 ```
 
-That setup is suitable for the first implementation. It should not be over-generalized too early. The goal is to keep the v1 system working, deterministic, and easy to debug.
-
 ---
 
 ## 1. Architectural Backbone To Keep

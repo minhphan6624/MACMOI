@@ -356,6 +356,29 @@ AND selected package has no downstream_task_id
 THEN dispatch Robot 2 from home/idle to transfer B
 ```
 
+Current v1 implementation only starts Robot 2 when a package is already buffered and transfer B is enterable. It does not yet proactively send Robot 2 to staging X while Robot 1 is still occupying B.
+
+Future downstream staging rule:
+
+```text
+IF mission is RUNNING
+AND Robot 2 is IDLE
+AND upstream work is likely to produce a transfer package soon
+AND transfer B is occupied by Robot 1 or not yet ready for Robot 2
+THEN dispatch Robot 2 to staging X
+```
+
+Then:
+
+```text
+IF Robot 2 is waiting at staging X
+AND transfer.package_buffer contains package_id
+AND transfer.robot_occupancy is None
+THEN dispatch Robot 2 from staging X into transfer B
+```
+
+This requires either a downstream-specific staging state or a more general waiting-robot model, because Robot 2 may wait at staging without carrying a package.
+
 ### Continue Downstream Delivery
 
 ```text
@@ -394,7 +417,61 @@ Hard pause, task interrupt, task cancel, and task resume are later extensions.
 
 ---
 
-## 8. RMF Bridge
+## 8. Simulated Package Handling
+
+The current implementation treats loading and unloading as immediate logical transitions tied to RMF task completion.
+
+Not implemented yet:
+
+* simulated source loading delay
+* simulated transfer drop-off delay
+* simulated transfer pickup delay
+* simulated destination unloading delay
+
+Future timer-based handling can be modeled as actions and events:
+
+```python
+class StartHandlingTimer:
+    robot_id: str
+    package_id: str
+    handling_type: str
+    seconds: float
+
+class HandlingTimerCompleted:
+    robot_id: str
+    package_id: str
+    handling_type: str
+```
+
+Example transfer drop-off flow:
+
+```text
+Robot 1 completes staging_to_transfer
+  -> robot status becomes UNLOADING
+  -> start transfer drop-off timer
+  -> timer completes
+  -> package becomes AT_TRANSFER
+  -> transfer.package_buffer = package_id
+  -> Robot 1 leaves/releases B
+```
+
+Example transfer pickup flow:
+
+```text
+Robot 2 completes home_to_transfer or staging_to_transfer
+  -> robot status becomes LOADING
+  -> start transfer pickup timer
+  -> timer completes
+  -> transfer.package_buffer is released
+  -> package becomes INBOUND_TO_DESTINATION
+  -> dispatch Robot 2 to destination C
+```
+
+This should be added before the demo if the UI needs to visibly show package handling time.
+
+---
+
+## 9. RMF Bridge
 
 ### Inbound: RMF To Mission
 
@@ -466,7 +543,7 @@ The current implementation stops at emitting these dispatch actions. It does not
 
 ---
 
-## 9. Mission API
+## 10. Mission API
 
 Endpoints:
 
@@ -511,7 +588,7 @@ Response shape:
 
 ---
 
-## 10. Mission UI
+## 11. Mission UI
 
 The rmf-web mission tab should consume the Mission API and show:
 
@@ -532,7 +609,7 @@ Controls:
 
 ---
 
-## 11. Implementation Order
+## 12. Implementation Order
 
 1. Implement state models and event classes. Done.
 2. Implement `handle_event(event)` with pure state transitions. Done.
@@ -545,7 +622,7 @@ Controls:
 
 ---
 
-## 12. Implemented So Far
+## 13. Implemented So Far
 
 The initial version is a pure Python mission core in `rmf_ws/src/mrd_mission_manager`.
 
@@ -572,5 +649,7 @@ Current limitation:
 * no ROS 2 node yet
 * no RMF task submission yet
 * no task-context mapping from RMF task ID to mission package/segment yet
+* no Robot 2 proactive staging behavior while Robot 1 occupies transfer B
+* no simulated package loading/unloading timers
 * no Mission API endpoints yet
 * no rmf-web mission tab yet
