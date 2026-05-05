@@ -67,6 +67,7 @@ class TestMissionManager(unittest.TestCase):
         self.assertEqual(manager.state.delivered_count, 1)
         self.assertEqual(manager.state.status, MissionStatus.COMPLETED)
         self.assertTrue(any(isinstance(action, CompleteMission) for action in actions))
+        self.assertFalse(any(isinstance(action, DispatchTask) for action in actions))
 
     def test_pause_blocks_new_dispatch(self):
         manager = MissionManager.create("m1", 1)

@@ -1,10 +1,10 @@
-# Mission ROS Bridge Implementation Plan
+# Mission ROS Bridge Implementation Notes
 
 ## Summary
 
-Implement the first ROS-facing bridge inside `rmf_ws/src/mrd_mission_manager` to connect the pure Python mission manager to Open-RMF task execution.
+The first ROS-facing bridge inside `rmf_ws/src/mrd_mission_manager` connects the pure Python mission manager to Open-RMF task execution.
 
-The bridge will:
+The bridge:
 
 * consume `DispatchTask` actions from the mission manager
 * submit robot-specific RMF patrol tasks through `task_api_requests`
@@ -19,7 +19,7 @@ The mission core remains ROS-free. ROS and RMF-specific behavior lives in the br
 
 ## Key Additions
 
-Add `rmf_bridge.py`:
+Implemented in `rmf_bridge.py`:
 
 * Build RMF `robot_task_request` JSON payloads.
 * Publish requests through an injected callback so the bridge can be unit tested without ROS.
@@ -28,7 +28,7 @@ Add `rmf_bridge.py`:
 * Convert completed task IDs into mission events.
 * Ignore unknown or already-processed task IDs.
 
-Add `mission_manager_node.py`:
+Implemented in `mission_manager_node.py`:
 
 * Create a ROS 2 node wrapper.
 * Instantiate `MissionManager`.
@@ -38,10 +38,10 @@ Add `mission_manager_node.py`:
 * Subscribe to `rmf_task_msgs/msg/Tasks` on `task_summaries`.
 * Dispatch new actions returned by the mission manager.
 
-Add package metadata:
+Implemented package metadata:
 
-* Add `rclpy` and `rmf_task_msgs` runtime dependencies.
-* Add a console script entry point for the node.
+* `rclpy` and `rmf_task_msgs` runtime dependencies.
+* `mission_manager_node` console script entry point.
 
 ---
 
@@ -63,8 +63,8 @@ staging_waypoint = "wp2"
 transfer_waypoint = "wp3"
 destination_waypoint = "wp4"
 
-tb3_1_home_waypoint = "wp1"
-tb3_2_home_waypoint = "wp2"
+upstream_home_waypoint = "wp1"
+downstream_home_waypoint = "wp2"
 task_summaries_topic = "task_summaries"
 ```
 
@@ -113,7 +113,7 @@ STAGING_TO_TRANSFER:
 
 HOME_TO_TRANSFER:
   robot = tb3_2
-  places = [tb3_2_home_waypoint, transfer_waypoint]
+  places = [downstream_home_waypoint, transfer_waypoint]
 
 TRANSFER_TO_DESTINATION:
   robot = tb3_2
@@ -170,7 +170,7 @@ This prevents duplicate RMF task updates from re-emitting the same mission event
 
 ## Tests
 
-Add unit tests that do not require a live RMF system:
+Implemented unit tests that do not require a live RMF system:
 
 * `DispatchTask(SOURCE_TO_STAGING)` creates a `robot_task_request` with `places=["wp1", "wp2"]`.
 * successful RMF response records task context
@@ -182,7 +182,7 @@ Add unit tests that do not require a live RMF system:
 Verification command:
 
 ```bash
-PYTHONPATH=rmf_ws/src/mrd_mission_manager python -m unittest discover -s rmf_ws/src/mrd_mission_manager/test
+PYTHONPATH=rmf_ws/src/mrd_mission_manager python3 -m unittest discover -s rmf_ws/src/mrd_mission_manager/test
 ```
 
 ---

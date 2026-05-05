@@ -62,28 +62,17 @@ rmf_ws/src/mrd_mission_manager/
 │   ├── actions.py
 │   ├── events.py
 │   ├── mission_manager.py
+│   ├── mission_manager_node.py
 │   ├── mission_state.py
+│   ├── rmf_bridge.py
 │   ├── rule_evaluator.py
 │   └── transfer_controller.py
 ├── test/
-│   └── test_mission_manager.py
+│   ├── test_mission_manager.py
+│   └── test_rmf_bridge.py
 ├── package.xml
 ├── setup.cfg
 └── setup.py
-```
-
-Planned package layout after RMF integration:
-
-```text
-mrd_mission_manager/
-├── mission_state.py
-├── events.py
-├── actions.py
-├── transfer_controller.py
-├── rule_evaluator.py
-├── mission_manager.py
-├── rmf_bridge.py
-└── mission_manager_node.py
 ```
 
 Responsibilities:
@@ -94,8 +83,8 @@ Responsibilities:
 * `transfer_controller.py`: Zone B entry and buffer rules
 * `rule_evaluator.py`: dispatch and completion rules
 * `mission_manager.py`: receives events, updates state, emits actions
-* `rmf_bridge.py`: RMF task submission and RMF update translation, not implemented yet
-* `mission_manager_node.py`: ROS 2 runtime wrapper, not implemented yet
+* `rmf_bridge.py`: RMF task request building, response handling, and completion-to-event translation
+* `mission_manager_node.py`: ROS 2 runtime wrapper for RMF task API topics
 
 ---
 
@@ -119,6 +108,8 @@ class MissionState:
     status: MissionStatus
     total_packages: int
     delivered_count: int
+    upstream_robot_id: str
+    downstream_robot_id: str
     packages: dict[str, PackageRecord]
     transfer: TransferZoneState
     robots: dict[str, RobotMissionState]
@@ -191,39 +182,44 @@ The RMF bridge may observe lower-level RMF facts such as task state, robot state
 
 ```python
 class MissionStarted:
-    pass
+    mission_id: str
 
 class RobotBecameIdle:
+    mission_id: str
     robot_id: str
 
 class RobotArrivedAtStaging:
+    mission_id: str
     robot_id: str
-    package_id: str | None
+    package_id: str
     task_id: str
 
 class UpstreamLegCompleted:
+    mission_id: str
     robot_id: str
     package_id: str
     task_id: str
 
 class DownstreamPickupCompleted:
+    mission_id: str
     robot_id: str
     package_id: str
     task_id: str
 
 class DownstreamLegCompleted:
+    mission_id: str
     robot_id: str
     package_id: str
     task_id: str
 
 class OperatorPaused:
-    pass
+    mission_id: str
 
 class OperatorResumed:
-    pass
+    mission_id: str
 
 class OperatorAborted:
-    pass
+    mission_id: str
 ```
 
 Event source mapping:
@@ -473,9 +469,11 @@ This should be added before the demo if the UI needs to visibly show package han
 
 ## 9. RMF Bridge
 
+The current bridge implementation is `mrd_mission_manager/rmf_bridge.py`. It is ROS-free and is driven by the ROS node through injected publish callbacks and RMF task API messages.
+
 ### Inbound: RMF To Mission
 
-The bridge subscribes to RMF/fleet/task updates and maps them to mission events.
+The ROS node subscribes to RMF task updates and passes them to the bridge, which maps completed mission task IDs to mission events.
 
 Examples:
 
@@ -496,32 +494,28 @@ RMF robot/task state indicates no active mission task
   -> RobotBecameIdle
 ```
 
-Keep a mapping from RMF task ID to mission context:
+The bridge keeps a mapping from RMF task ID to mission context:
 
 ```python
 task_context_by_id = {
-    "task_123": {
-        "mission_id": "m1",
-        "package_id": "P3",
-        "robot_id": "tb3_1",
-        "leg": "upstream",
-        "segment": "staging_to_transfer",
-    }
+    "task_123": TaskContext(
+        mission_id="m1",
+        package_id="P3",
+        robot_id="tb3_1",
+        segment=TaskSegment.STAGING_TO_TRANSFER,
+    )
 }
 ```
 
 ### Outbound: Mission To RMF
 
-Dispatch functions:
+Implemented dispatch entrypoint:
 
 ```python
-def dispatch_source_to_staging(robot_id: str, package_id: str) -> str: ...
-def dispatch_into_transfer(robot_id: str, package_id: str) -> str: ...
-def dispatch_to_destination(robot_id: str, package_id: str) -> str: ...
-def send_robot_home(robot_id: str) -> str: ...
+def submit_action(action: DispatchTask | SendRobotHome) -> str | None: ...
 ```
 
-Each function submits a robot-specific patrol/loop-style waypoint task and returns the RMF task ID.
+`submit_action(...)` builds a robot-specific patrol request and publishes it through the injected callback. The bridge records the RMF task ID later when `task_api_responses` returns a successful response.
 
 Suggested v1 task segments:
 
@@ -539,7 +533,7 @@ Robot 2:
 
 The mission manager decides when to submit each segment.
 
-The current implementation stops at emitting these dispatch actions. It does not yet submit RMF tasks.
+The current ROS node submits these actions on `task_api_requests` as `rmf_task_msgs/msg/ApiRequest` messages.
 
 ---
 
@@ -615,40 +609,46 @@ Controls:
 2. Implement `handle_event(event)` with pure state transitions. Done.
 3. Implement transfer controller functions. Done.
 4. Implement rule evaluator and action emission. Done.
-5. Add RMF bridge task dispatch and task-context mapping. Next.
-6. Translate RMF task completions into mission events. Pending.
-7. Add Mission API endpoints. Pending.
-8. Add rmf-web mission tab. Pending.
+5. Add RMF bridge task dispatch and task-context mapping. Done.
+6. Translate RMF task completions into mission events. Done.
+7. Add ROS 2 node wrapper for RMF task API topics. Done.
+8. Validate the node against a live RMF deployment. Next.
+9. Add Mission API endpoints. Pending.
+10. Add rmf-web mission tab. Pending.
 
 ---
 
 ## 13. Implemented So Far
 
-The initial version is a pure Python mission core in `rmf_ws/src/mrd_mission_manager`.
+The current version in `rmf_ws/src/mrd_mission_manager` includes the mission core plus the first RMF bridge/node layer.
 
 Implemented:
 
 * `MissionManager.create(mission_id, total_packages)`
 * `MissionManager.handle_event(event)`
 * `MissionManager.record_dispatch(action, task_id)`
-* fixed robot roles using `tb3_1` as upstream and `tb3_2` as downstream
+* fixed default robot roles using `tb3_1` as upstream and `tb3_2` as downstream, with constructor/parameter overrides
 * mission/package/robot/transfer state models
 * transfer-zone entry, occupancy, buffer, and staging state helpers
 * event handling for start, pause, resume, abort, staging arrival, upstream completion, downstream pickup, downstream delivery, and robot idle
 * rule evaluation for upstream dispatch, transfer entry, downstream pickup, downstream destination dispatch, and mission completion
-* unittest smoke coverage for one-package completion and pause blocking new dispatch
+* RMF `robot_task_request` payload construction for patrol-style waypoint tasks
+* RMF API response handling and task-context mapping
+* RMF task completion translation back into mission events
+* ROS 2 node wrapper for `task_api_requests`, `task_api_responses`, and `task_summaries`
+* unittest coverage for mission core and RMF bridge behavior
 
 Current verification command:
 
 ```bash
-PYTHONPATH=rmf_ws/src/mrd_mission_manager /home/minhqphan/miniconda3/envs/fall-tsad/bin/python -m unittest discover -s rmf_ws/src/mrd_mission_manager/test
+PYTHONPATH=rmf_ws/src/mrd_mission_manager python3 -m unittest discover -s rmf_ws/src/mrd_mission_manager/test
 ```
 
 Current limitation:
 
-* no ROS 2 node yet
-* no RMF task submission yet
-* no task-context mapping from RMF task ID to mission package/segment yet
+* node has not yet been validated against a live RMF deployment
+* no launch/config file for the mission manager node yet
+* no rejected-task retry or operator-visible failure state yet
 * no Robot 2 proactive staging behavior while Robot 1 occupies transfer B
 * no simulated package loading/unloading timers
 * no Mission API endpoints yet
