@@ -17,4 +17,9 @@ setup(
     maintainer_email="quangminh6624@gmail.com",
     description="Mission manager for fixed-role multi-robot delivery missions.",
     license="Apache License 2.0",
+    entry_points={
+        "console_scripts": [
+            "mission_manager_node = mrd_mission_manager.mission_manager_node:main",
+        ],
+    },
 )

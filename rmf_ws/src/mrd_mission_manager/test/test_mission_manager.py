@@ -1,16 +1,15 @@
 import unittest
 
-from mrd_mission_manager.actions import CompleteMission
-from mrd_mission_manager.actions import DispatchTask
-from mrd_mission_manager.events import DownstreamLegCompleted
-from mrd_mission_manager.events import DownstreamPickupCompleted
-from mrd_mission_manager.events import MissionStarted
-from mrd_mission_manager.events import RobotArrivedAtStaging
-from mrd_mission_manager.events import UpstreamLegCompleted
+from mrd_mission_manager.actions import CompleteMission, DispatchTask
+from mrd_mission_manager.events import (
+    DownstreamLegCompleted,
+    DownstreamPickupCompleted,
+    MissionStarted,
+    RobotArrivedAtStaging,
+    UpstreamLegCompleted,
+)
 from mrd_mission_manager.mission_manager import MissionManager
-from mrd_mission_manager.mission_state import MissionStatus
-from mrd_mission_manager.mission_state import PackageStatus
-from mrd_mission_manager.mission_state import TaskSegment
+from mrd_mission_manager.mission_state import MissionStatus, PackageStatus, TaskSegment
 
 
 def dispatch(manager, action, task_id):
