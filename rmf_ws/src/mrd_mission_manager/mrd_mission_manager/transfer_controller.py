@@ -1,18 +1,27 @@
-from .mission_state import DOWNSTREAM_ROBOT
-from .mission_state import TransferZoneState
-from .mission_state import UPSTREAM_ROBOT
-
+from .mission_state import (
+    TransferZoneState,
+    DOWNSTREAM_ROBOT,
+    UPSTREAM_ROBOT
+)
 
 class TransferController:
-    def __init__(self, transfer: TransferZoneState):
+    def __init__(
+        self,
+        transfer: TransferZoneState,
+        upstream_robot: str = UPSTREAM_ROBOT,
+        downstream_robot: str = DOWNSTREAM_ROBOT,
+    ):
         self.transfer = transfer
+        self.upstream_robot = upstream_robot
+        self.downstream_robot = downstream_robot
 
     def can_robot_enter(self, robot_id: str, package_id: str | None = None) -> bool:
+        ''' Decide whether a robot can enter the transfer zone'''
         if self.transfer.robot_occupancy is not None:
             return False
-        if robot_id == UPSTREAM_ROBOT:
+        if robot_id == self.upstream_robot:
             return self.transfer.package_buffer is None and package_id is not None
-        if robot_id == DOWNSTREAM_ROBOT:
+        if robot_id == self.downstream_robot:
             return self.transfer.package_buffer is not None
         return False
 

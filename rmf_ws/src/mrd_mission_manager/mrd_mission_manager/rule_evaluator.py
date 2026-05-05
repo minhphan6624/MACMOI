@@ -69,7 +69,7 @@ def _grant_transfer_entry(state: MissionState, transfer: TransferController):
 
 def _continue_downstream_delivery(state: MissionState):
     
-    robot = state.robots[state.downstream_robot_id]
+    robot = state.robots[state.downstream_robot_id] # Robot2
     package_id = robot.active_package_id
     
     if package_id is None:
@@ -77,11 +77,12 @@ def _continue_downstream_delivery(state: MissionState):
     
     package = state.packages[package_id]
     
-    if robot.status != RobotStatus.IDLE:
-        return []
-    if robot.active_task_id is not None or package.downstream_task_id is not None:
-        return []
-    if package.status != PackageStatus.INBOUND_TO_DESTINATION:
+    if (
+        robot.status != RobotStatus.IDLE
+        or robot.active_task_id is not None
+        or package.downstream_task_id is not None
+        or package.status != PackageStatus.INBOUND_TO_DESTINATION
+    ):
         return []
 
     return [
@@ -100,13 +101,11 @@ def _start_downstream_package(state: MissionState, transfer: TransferController)
 
     robot = state.robots[state.downstream_robot_id]
     package = state.packages[package_id]
-    if robot.status != RobotStatus.IDLE:
-        return []
-    if robot.active_task_id is not None or package.downstream_task_id is not None:
-        return []
-    if package.status != PackageStatus.AT_TRANSFER:
-        return []
-    if not transfer.can_robot_enter(state.downstream_robot_id, package_id):
+    if (robot.status != RobotStatus.IDLE
+        or robot.active_task_id is not None or package.downstream_task_id is not None
+        or package.status != PackageStatus.AT_TRANSFER
+        or not transfer.can_robot_enter(state.downstream_robot_id, package_id)
+    ):
         return []
 
     transfer.occupy_transfer(state.downstream_robot_id)
