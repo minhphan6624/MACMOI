@@ -1,8 +1,9 @@
-from .actions import CompleteMission, DispatchTask, SendRobotHome
+from .actions import CompleteMission, DispatchTask, PositionRobot, SendRobotHome, StartHandlingTimer
 from .mission_state import (
     MissionState,
     MissionStatus,
     PackageStatus,
+    RobotLocation,
     RobotStatus,
     TaskSegment,
 )
@@ -28,7 +29,8 @@ def evaluate_rules(state: MissionState):
     actions.extend(_continue_downstream_delivery(state))
     actions.extend(_grant_transfer_entry(state, transfer))
     actions.extend(_start_downstream_package(state, transfer))
-    actions.extend(_start_upstream_package(state))
+    actions.extend(_stage_downstream_robot(state))
+    actions.extend(_start_upstream_package(state, transfer))
     return actions
 
 
@@ -68,8 +70,7 @@ def _grant_transfer_entry(state: MissionState, transfer: TransferController):
 
 
 def _continue_downstream_delivery(state: MissionState):
-    
-    robot = state.robots[state.downstream_robot_id] # Robot2
+    robot = state.robots[state.downstream_robot_id]
     package_id = robot.active_package_id
     
     if package_id is None:
@@ -101,7 +102,7 @@ def _start_downstream_package(state: MissionState, transfer: TransferController)
 
     robot = state.robots[state.downstream_robot_id]
     package = state.packages[package_id]
-    if (robot.status != RobotStatus.IDLE
+    if (robot.status not in (RobotStatus.IDLE, RobotStatus.WAITING_AT_STAGING)
         or robot.active_task_id is not None or package.downstream_task_id is not None
         or package.status != PackageStatus.AT_TRANSFER
         or not transfer.can_robot_enter(state.downstream_robot_id, package_id)
@@ -109,31 +110,83 @@ def _start_downstream_package(state: MissionState, transfer: TransferController)
         return []
 
     transfer.occupy_transfer(state.downstream_robot_id)
+
+    segment = TaskSegment.HOME_TO_TRANSFER
+    if robot.location == RobotLocation.DESTINATION:
+        segment = TaskSegment.DESTINATION_TO_TRANSFER
+    
+    elif robot.location == RobotLocation.STAGING:
+        segment = TaskSegment.STAGING_TO_TRANSFER
+
     return [
         DispatchTask(
             state.downstream_robot_id,
             package_id,
-            TaskSegment.HOME_TO_TRANSFER,
+            segment,
         )
     ]
 
 
-def _start_upstream_package(state: MissionState):
+def _stage_downstream_robot(state: MissionState):
+    robot = state.robots[state.downstream_robot_id]
+    if robot.status != RobotStatus.IDLE or robot.active_task_id is not None:
+        return []
+    if robot.active_package_id is not None:
+        return []
+    if state.transfer.robot_occupancy == state.downstream_robot_id:
+        return []
+    if (
+        state.transfer.package_buffer is not None
+        and state.transfer.robot_occupancy is None
+    ):
+        return []
+    
+    if robot.location == RobotLocation.STAGING:
+        return []
+    if state.delivered_count == state.total_packages:
+        return []
+
+    segment = TaskSegment.HOME_TO_STAGING
+    if robot.location == RobotLocation.DESTINATION:
+        segment = TaskSegment.DESTINATION_TO_STAGING
+    return [PositionRobot(state.downstream_robot_id, segment)]
+
+
+def _start_upstream_package(state: MissionState, transfer: TransferController):
     robot = state.robots[state.upstream_robot_id]
     if robot.status != RobotStatus.IDLE or robot.active_task_id is not None:
         return []
     if state.transfer.package_buffer is not None:
         return []
 
+    if robot.active_package_id is not None:
+        package = state.packages[robot.active_package_id]
+        if package.upstream_task_id is not None:
+            return []
+        if transfer.can_robot_enter(state.upstream_robot_id, package.package_id):
+            transfer.occupy_transfer(state.upstream_robot_id)
+            segment = TaskSegment.SOURCE_TO_TRANSFER
+        else:
+            segment = TaskSegment.SOURCE_TO_STAGING
+        return [
+            DispatchTask(
+                state.upstream_robot_id,
+                package.package_id,
+                segment,
+            )
+        ]
+
     package = _next_package_at_source(state)
     if package is None or package.upstream_task_id is not None:
         return []
 
+    robot.status = RobotStatus.LOADING
+    robot.active_package_id = package.package_id
     return [
-        DispatchTask(
+        StartHandlingTimer(
             state.upstream_robot_id,
             package.package_id,
-            TaskSegment.SOURCE_TO_STAGING,
+            "source_load",
         )
     ]
 
