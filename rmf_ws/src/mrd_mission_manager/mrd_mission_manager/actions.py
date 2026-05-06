@@ -11,6 +11,20 @@ class DispatchTask:
 
 
 @dataclass(frozen=True)
+class PositionRobot:
+    robot_id: str
+    segment: TaskSegment
+
+
+@dataclass(frozen=True)
+class StartHandlingTimer:
+    robot_id: str
+    package_id: str
+    handling_type: str
+    seconds: float = 5.0
+
+
+@dataclass(frozen=True)
 class SendRobotHome:
     robot_id: str
 
