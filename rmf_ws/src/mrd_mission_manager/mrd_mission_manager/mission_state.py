@@ -8,9 +8,13 @@ DOWNSTREAM_ROBOT = "tb3_2"
 
 ''' Name of the route/task type being dispatched'''
 class TaskSegment(Enum):
+    SOURCE_TO_TRANSFER = "source_to_transfer"
     SOURCE_TO_STAGING = "source_to_staging"
     STAGING_TO_TRANSFER = "staging_to_transfer"
     HOME_TO_TRANSFER = "home_to_transfer"
+    DESTINATION_TO_TRANSFER = "destination_to_transfer"
+    HOME_TO_STAGING = "home_to_staging"
+    DESTINATION_TO_STAGING = "destination_to_staging"
     TRANSFER_TO_DESTINATION = "transfer_to_destination"
     HOME = "home"
 
@@ -35,8 +39,18 @@ class PackageRecord:
 class RobotStatus(Enum):
     IDLE = "IDLE"
     MOVING = "MOVING"
+    LOADING = "LOADING"
+    UNLOADING = "UNLOADING"
     WAITING_AT_STAGING = "WAITING_AT_STAGING"
     RETURNING = "RETURNING"
+
+
+class RobotLocation(Enum):
+    SOURCE = "SOURCE"
+    STAGING = "STAGING"
+    TRANSFER = "TRANSFER"
+    DESTINATION = "DESTINATION"
+    HOME = "HOME"
 
 @dataclass
 class RobotMissionState:
@@ -44,6 +58,7 @@ class RobotMissionState:
     status: RobotStatus = RobotStatus.IDLE
     active_task_id: str | None = None
     active_package_id: str | None = None # Package that the robot is currently associated with
+    location: RobotLocation = RobotLocation.HOME
 
 
 # ========== Mission State ==========
