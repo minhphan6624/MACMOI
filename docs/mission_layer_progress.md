@@ -1,91 +1,79 @@
-# Mission Manager Current State
+# Mission Layer Current Mechanism
 
-## Purpose
+This document describes how the current `mrd_mission_manager` package works. It is the implementation reference for the mission layer as it exists now.
 
-This document tracks what has been created so far for the mission manager layer and how the current implementation works.
+The current mission is a fixed two-robot package handoff:
 
-The package now contains:
+```text
+source A -> transfer B -> destination C
 
-* a ROS-free Python mission core
-* an RMF bridge that builds `robot_task_request` patrol payloads and maps RMF task completion back into mission events
-* a ROS 2 node wrapper that publishes/subscribes on RMF task API topics
+Robot 1: upstream, source A -> transfer B
+Robot 2: downstream, transfer B -> destination C
+```
 
-The Mission API, rmf-web mission tab, persistent storage, fault recovery, and hard pause/cancel/resume of active RMF tasks are still not implemented.
+Zone X is a shared staging waypoint near transfer B. It is used as a waiting/repositioning location when a robot cannot enter B yet. Home waypoints are also configured per robot and are used for mission completion and default positioning routes.
 
 ---
 
-## Implemented Package
-
-Location:
+## Package Layout
 
 ```text
 rmf_ws/src/mrd_mission_manager/
+├── mrd_mission_manager/
+│   ├── actions.py
+│   ├── events.py
+│   ├── mission_manager.py
+│   ├── mission_manager_node.py
+│   ├── mission_state.py
+│   ├── rmf_bridge.py
+│   ├── rule_evaluator.py
+│   └── transfer_controller.py
+└── test/
+    ├── test_mission_manager.py
+    └── test_rmf_bridge.py
 ```
 
-Files:
-
-```text
-mrd_mission_manager/
-├── __init__.py
-├── actions.py
-├── events.py
-├── mission_manager.py
-├── mission_manager_node.py
-├── mission_state.py
-├── rmf_bridge.py
-├── rule_evaluator.py
-└── transfer_controller.py
-
-test/
-├── test_mission_manager.py
-└── test_rmf_bridge.py
-```
-
-Package metadata:
-
-```text
-package.xml
-setup.cfg
-setup.py
-resource/mrd_mission_manager
-```
-
-The package exposes this console script:
+The ROS entrypoint is:
 
 ```text
 mission_manager_node = mrd_mission_manager.mission_manager_node:main
 ```
 
-Runtime dependencies currently include `rclpy` and `rmf_task_msgs`.
+The package has three layers:
+
+```text
+Mission core:
+  plain Python state machine and rules, no ROS imports
+
+RMF bridge:
+  converts mission actions to RMF task API payloads
+  converts RMF task completions back to mission events
+
+ROS node:
+  owns ROS publishers/subscribers and timers
+  connects the mission core/bridge to a running RMF deployment
+```
 
 ---
 
-## Implemented Responsibilities
+## Core Concepts
 
-### `mission_state.py`
+### Events
 
-Defines the mission data model:
+Events are facts that already happened. They enter `MissionManager.handle_event(...)`.
 
-* mission status
-* package status
-* robot status
-* task segment names
-* package records
-* transfer-zone state
-* robot mission state
-
-Default fixed robot roles:
+Examples:
 
 ```text
-tb3_1 = upstream robot
-tb3_2 = downstream robot
+RMF says a movement task completed
+  -> mission event
+
+5 second loading timer expires
+  -> mission event
+
+operator starts/pauses/resumes/aborts mission
+  -> mission event
 ```
-
-`MissionManager.create(...)` can override those robot IDs.
-
-### `events.py`
-
-Defines mission events, which are facts that already happened.
 
 Implemented events:
 
@@ -93,146 +81,555 @@ Implemented events:
 MissionStarted
 RobotBecameIdle
 RobotArrivedAtStaging
+DownstreamRobotArrivedAtStaging
 UpstreamLegCompleted
 DownstreamPickupCompleted
 DownstreamLegCompleted
+HandlingTimerCompleted
 OperatorPaused
 OperatorResumed
 OperatorAborted
 ```
 
-Each event carries `mission_id`; robot/package/task events also carry the relevant IDs.
+### Actions
 
-### `actions.py`
+Actions are commands emitted by the mission layer.
 
-Defines mission actions, which are commands emitted by the rule evaluator.
+The mission manager does not directly publish ROS messages. It emits actions, and the ROS node decides how to execute those actions.
 
 Implemented actions:
 
 ```text
-DispatchTask
-SendRobotHome
-CompleteMission
+DispatchTask          package-related RMF movement
+PositionRobot         package-free robot repositioning
+StartHandlingTimer    5 second mission-layer load/unload timer
+SendRobotHome         send robot to configured home waypoint
+CompleteMission       mark mission completion to external consumers
 ```
 
-### `transfer_controller.py`
+The distinction matters:
 
-Owns Zone B helper logic:
+```text
+DispatchTask = package work
+PositionRobot = move robot without assigning a package
+StartHandlingTimer = simulate package handling time
+```
 
-* checks whether a robot can enter transfer
-* reserves transfer robot occupancy
-* releases transfer robot occupancy
-* buffers a package at transfer
-* releases a package from transfer
-* tracks the waiting robot/package at staging X
+This separation keeps package state changes from being hidden inside RMF callbacks. The mission core decides what should happen next; the bridge/node only execute those decisions.
+
+---
+
+## State Model
+
+### Mission Status
+
+```text
+CREATED
+READY
+RUNNING
+PAUSED
+COMPLETED
+ABORTED
+```
+
+Rules only dispatch new work while the mission is `RUNNING`.
+
+### Package Status
+
+```text
+AT_SOURCE
+INBOUND_TO_TRANSFER
+AT_TRANSFER
+INBOUND_TO_DESTINATION
+DELIVERED
+```
+
+Each package tracks upstream/downstream RMF task IDs to avoid duplicate dispatch.
+
+### Robot Status
+
+```text
+IDLE
+MOVING
+LOADING
+UNLOADING
+WAITING_AT_STAGING
+RETURNING
+```
+
+### Robot Location
+
+The mission layer also tracks a logical location:
+
+```text
+SOURCE
+STAGING
+TRANSFER
+DESTINATION
+HOME
+```
+
+This is not a full localization system. It is mission-level context used to choose routes such as `DESTINATION_TO_TRANSFER` instead of `HOME_TO_TRANSFER`.
+
+This location is updated only when mission-relevant tasks complete. It should not be treated as a substitute for robot pose, navigation state, or RMF traffic state.
+
+### Transfer Zone State
+
+```text
+robot_occupancy
+package_buffer
+waiting_robot
+waiting_package
+```
 
 Current transfer rules:
 
 ```text
-Upstream robot may enter B if:
-  transfer.robot_occupancy is None
-  transfer.package_buffer is None
+Robot 1 may enter B if:
+  robot_occupancy is None
+  package_buffer is None
   package_id is not None
 
-Downstream robot may enter B if:
-  transfer.robot_occupancy is None
-  transfer.package_buffer is not None
+Robot 2 may enter B if:
+  robot_occupancy is None
+  package_buffer is not None
 ```
 
-### `rule_evaluator.py`
+Only Robot 1 uses `waiting_robot/waiting_package` because it waits at staging while already associated with a package. Robot 2 staging is package-free and is represented by robot status/location instead.
 
-Looks at current mission state and returns the next mission actions.
+---
 
-Implemented rules:
+## RMF Task Segments
 
-* complete mission and send idle robots home
-* continue downstream delivery after transfer pickup
-* grant upstream transfer entry from staging X into B
-* start downstream pickup when a package is buffered at B
-* start upstream package movement from source to staging X
+In this package, a segment is a named movement leg that the mission layer can request.
 
-Rules emit no actions unless the mission is `RUNNING`, except completion is evaluated while running and changes the mission to `COMPLETED`.
-
-### `mission_manager.py`
-
-Main state-machine coordinator.
-
-Core methods:
-
-```python
-MissionManager.create(
-    mission_id,
-    total_packages,
-    upstream_robot="tb3_1",
-    downstream_robot="tb3_2",
-)
-MissionManager.handle_event(event)
-MissionManager.record_dispatch(action, task_id)
-```
-
-The core event loop is:
-
-```python
-def handle_event(event):
-    update_state(event)
-    actions = evaluate_rules(state)
-    return actions
-```
-
-`record_dispatch(...)` must be called after RMF accepts a dispatched task. It marks the robot as moving, stores the RMF task ID on the robot, and records the task ID on the package's upstream or downstream side.
-
-### `rmf_bridge.py`
-
-ROS-free bridge logic between mission actions and RMF task data.
-
-Implemented behavior:
-
-* builds RMF `robot_task_request` JSON payloads
-* emits patrol tasks with one round and segment-specific waypoint lists
-* stores pending request ID to mission action
-* parses successful RMF API responses
-* calls `MissionManager.record_dispatch(...)` for accepted `DispatchTask` actions
-* stores `task_context_by_id`
-* ignores RMF API ack messages and only consumes responding messages
-* maps completed task IDs back to mission events
-* ignores unknown and duplicate task completions
-* accepts both dict-like task states and ROS message-like task states in tests
-
-Task segment mapping:
+Examples:
 
 ```text
-SOURCE_TO_STAGING       -> [source_waypoint, staging_waypoint]
-STAGING_TO_TRANSFER     -> [staging_waypoint, transfer_waypoint]
-HOME_TO_TRANSFER        -> [robot_home_waypoint, transfer_waypoint]
-TRANSFER_TO_DESTINATION -> [transfer_waypoint, destination_waypoint]
-HOME                    -> [robot_home_waypoint]
+SOURCE_TO_TRANSFER means "send the selected robot from source A to transfer B"
+TRANSFER_TO_DESTINATION means "send Robot 2 from transfer B to destination C"
+HOME_TO_STAGING means "reposition a robot from its configured home waypoint to staging X"
 ```
 
-Completion mapping:
+A segment is not itself an RMF task. It is mission-layer vocabulary. `rmf_bridge.py` translates each segment into an RMF `robot_task_request` patrol payload with a concrete waypoint list.
+
+Current `TaskSegment` values:
 
 ```text
-SOURCE_TO_STAGING       -> RobotArrivedAtStaging
-STAGING_TO_TRANSFER     -> UpstreamLegCompleted
-HOME_TO_TRANSFER        -> DownstreamPickupCompleted
-TRANSFER_TO_DESTINATION -> DownstreamLegCompleted
-HOME                    -> RobotBecameIdle
+SOURCE_TO_TRANSFER
+SOURCE_TO_STAGING
+STAGING_TO_TRANSFER
+HOME_TO_TRANSFER
+DESTINATION_TO_TRANSFER
+HOME_TO_STAGING
+DESTINATION_TO_STAGING
+TRANSFER_TO_DESTINATION
+HOME
 ```
 
-### `mission_manager_node.py`
+Waypoint mapping in `rmf_bridge.py`:
 
-ROS 2 runtime wrapper.
+```text
+SOURCE_TO_TRANSFER       -> [source_waypoint, transfer_waypoint]
+SOURCE_TO_STAGING        -> [source_waypoint, staging_waypoint]
+STAGING_TO_TRANSFER      -> [staging_waypoint, transfer_waypoint]
+HOME_TO_TRANSFER         -> [robot_home_waypoint, transfer_waypoint]
+DESTINATION_TO_TRANSFER  -> [destination_waypoint, transfer_waypoint]
+HOME_TO_STAGING          -> [robot_home_waypoint, staging_waypoint]
+DESTINATION_TO_STAGING   -> [destination_waypoint, staging_waypoint]
+TRANSFER_TO_DESTINATION  -> [transfer_waypoint, destination_waypoint]
+HOME                     -> [robot_home_waypoint]
+```
 
-Implemented behavior:
+There is currently one shared `staging_waypoint` parameter. There are separate home waypoint parameters:
 
-* creates `MissionManager`
-* creates `RmfMissionBridge`
-* publishes `rmf_task_msgs/msg/ApiRequest` on `task_api_requests`
-* subscribes to `rmf_task_msgs/msg/ApiResponse` on `task_api_responses`
-* subscribes to `rmf_task_msgs/msg/Tasks` on `task_summaries` by default
-* optionally starts the mission with `auto_start=true`
-* submits `DispatchTask` and `SendRobotHome` actions through the bridge
+```text
+upstream_home_waypoint
+downstream_home_waypoint
+```
 
-ROS parameters and defaults:
+Home waypoints can be distinct or point to the same physical waypoint.
+
+The same segment can have different mission meaning depending on the robot/context. For example, `STAGING_TO_TRANSFER` is used by Robot 1 to drop off a package and by Robot 2 to pick up a package from transfer. The RMF bridge maps completion back to the right event using the robot ID and stored task context.
+
+---
+
+## Runtime Dataflow
+
+`mission_manager_node.py` is the runtime adapter. It is responsible for:
+
+```text
+publishing ApiRequest messages to task_api_requests
+subscribing to ApiResponse messages from task_api_responses
+subscribing to Tasks messages from task_summaries
+starting ROS timers for StartHandlingTimer actions
+feeding timer completions and RMF completions back into MissionManager
+```
+
+It does not contain the mission rules. The rules remain in `rule_evaluator.py`.
+
+```text
+Mission event
+  -> MissionManager.handle_event()
+  -> state transition
+  -> rule_evaluator.evaluate_rules()
+  -> actions
+  -> mission_manager_node dispatches actions
+```
+
+Movement actions:
+
+```text
+DispatchTask / PositionRobot
+  -> RmfMissionBridge.submit_action()
+  -> task_api_requests
+  -> task_api_responses
+  -> record_dispatch() or record_position_dispatch()
+  -> task_summaries completion
+  -> bridge maps task ID back to mission event
+```
+
+Handling actions:
+
+```text
+StartHandlingTimer
+  -> mission_manager_node creates a ROS timer
+  -> timer fires after 5 seconds
+  -> HandlingTimerCompleted event
+  -> state update
+  -> evaluate rules again
+```
+
+The mission core remains ROS-free. ROS topic I/O and ROS timers live in `mission_manager_node.py`.
+
+`rmf_bridge.py` is intentionally ROS-free as well. It works with plain Python objects and injected publish callbacks, which makes it testable without a running ROS graph.
+
+---
+
+## Rule Evaluator
+
+`rule_evaluator.py` is the mission decision layer. It reads the current state and returns actions. It does not talk to RMF directly.
+
+The evaluator runs these checks while the mission is `RUNNING`:
+
+1. Complete mission if all packages are delivered.
+2. Continue downstream delivery after Robot 2 has loaded at transfer.
+3. Grant Robot 1 entry from staging into transfer.
+4. Start Robot 2 pickup if a package is buffered at transfer.
+5. Reposition Robot 2 to staging if it is idle and waiting for future transfer work.
+6. Start or continue Robot 1 upstream package work.
+
+Important behavior:
+
+```text
+Robot 1 does not always go through staging.
+If B is available, Robot 1 goes source -> transfer directly.
+If B is blocked, Robot 1 goes source -> staging, then staging -> transfer.
+```
+
+Robot 2 behavior:
+
+```text
+If package is ready at B and B is free:
+  Robot 2 goes to B from current logical position.
+
+If Robot 2 is at destination and package is ready at B:
+  use DESTINATION_TO_TRANSFER.
+
+If Robot 2 has no package and B is not ready:
+  PositionRobot sends it to staging.
+```
+
+The rule order matters because some rules reserve transfer occupancy before later rules run. This prevents both robots from being dispatched into B during the same evaluation pass.
+
+---
+
+## Current One-Package Flow
+
+### 1. Mission Starts
+
+Input:
+
+```text
+MissionStarted
+```
+
+State:
+
+```text
+mission.status = RUNNING
+```
+
+Typical rule output:
+
+```text
+StartHandlingTimer(tb3_1, P1, source_load, 5s)
+PositionRobot(tb3_2, HOME_TO_STAGING)
+```
+
+Robot 1 begins simulated source loading. Robot 2 may move to staging to wait near transfer.
+
+### 2. Robot 1 Finishes Source Loading
+
+Input:
+
+```text
+HandlingTimerCompleted(tb3_1, P1, source_load)
+```
+
+State:
+
+```text
+tb3_1.status = IDLE
+tb3_1.active_package_id = P1
+tb3_1.location = SOURCE
+```
+
+If transfer B is free, rule output:
+
+```text
+DispatchTask(tb3_1, P1, SOURCE_TO_TRANSFER)
+```
+
+If transfer B is blocked, rule output:
+
+```text
+DispatchTask(tb3_1, P1, SOURCE_TO_STAGING)
+```
+
+### 3A. Robot 1 Goes Directly To Transfer
+
+After RMF accepts `SOURCE_TO_TRANSFER`, `record_dispatch(...)` marks Robot 1 as moving and records the upstream task ID.
+
+When RMF reports completion, the bridge emits:
+
+```text
+UpstreamLegCompleted(tb3_1, P1, task_id)
+```
+
+State:
+
+```text
+tb3_1.status = UNLOADING
+tb3_1.location = TRANSFER
+P1.upstream_task_id = None
+```
+
+Action:
+
+```text
+StartHandlingTimer(tb3_1, P1, transfer_unload, 5s)
+```
+
+### 3B. Robot 1 Uses Staging
+
+If Robot 1 was sent `SOURCE_TO_STAGING`, completion maps to:
+
+```text
+RobotArrivedAtStaging(tb3_1, P1, task_id)
+```
+
+State:
+
+```text
+tb3_1.status = WAITING_AT_STAGING
+tb3_1.location = STAGING
+tb3_1.active_package_id = P1
+transfer.waiting_robot = tb3_1
+transfer.waiting_package = P1
+```
+
+When B becomes available, the evaluator emits:
+
+```text
+DispatchTask(tb3_1, P1, STAGING_TO_TRANSFER)
+```
+
+Completion then follows the same `UpstreamLegCompleted -> transfer_unload timer` path.
+
+### 4. Robot 1 Finishes Transfer Unloading
+
+Input:
+
+```text
+HandlingTimerCompleted(tb3_1, P1, transfer_unload)
+```
+
+State:
+
+```text
+P1.status = AT_TRANSFER
+transfer.package_buffer = P1
+transfer.robot_occupancy = None
+tb3_1.status = IDLE
+tb3_1.active_package_id = None
+tb3_1.location = TRANSFER
+```
+
+If Robot 2 is waiting at staging, rule output:
+
+```text
+DispatchTask(tb3_2, P1, STAGING_TO_TRANSFER)
+```
+
+Otherwise Robot 2 may be dispatched from home or destination:
+
+```text
+DispatchTask(tb3_2, P1, HOME_TO_TRANSFER)
+DispatchTask(tb3_2, P1, DESTINATION_TO_TRANSFER)
+```
+
+### 5. Robot 2 Arrives At Transfer And Loads
+
+Completion of Robot 2's transfer-entry task maps to:
+
+```text
+DownstreamPickupCompleted(tb3_2, P1, task_id)
+```
+
+State:
+
+```text
+tb3_2.status = LOADING
+tb3_2.location = TRANSFER
+tb3_2.active_package_id = P1
+P1.downstream_task_id = None
+```
+
+Action:
+
+```text
+StartHandlingTimer(tb3_2, P1, transfer_load, 5s)
+```
+
+### 6. Robot 2 Finishes Transfer Loading
+
+Input:
+
+```text
+HandlingTimerCompleted(tb3_2, P1, transfer_load)
+```
+
+State:
+
+```text
+P1.status = INBOUND_TO_DESTINATION
+transfer.package_buffer = None
+transfer.robot_occupancy = None
+tb3_2.status = IDLE
+tb3_2.active_package_id = P1
+tb3_2.location = TRANSFER
+```
+
+Rule output:
+
+```text
+DispatchTask(tb3_2, P1, TRANSFER_TO_DESTINATION)
+```
+
+### 7. Robot 2 Arrives At Destination And Unloads
+
+Completion maps to:
+
+```text
+DownstreamLegCompleted(tb3_2, P1, task_id)
+```
+
+State:
+
+```text
+tb3_2.status = UNLOADING
+tb3_2.location = DESTINATION
+tb3_2.active_package_id = P1
+P1.downstream_task_id = None
+```
+
+Action:
+
+```text
+StartHandlingTimer(tb3_2, P1, destination_unload, 5s)
+```
+
+### 8. Destination Unload Completes
+
+Input:
+
+```text
+HandlingTimerCompleted(tb3_2, P1, destination_unload)
+```
+
+State:
+
+```text
+P1.status = DELIVERED
+delivered_count += 1
+tb3_2.status = IDLE
+tb3_2.active_package_id = None
+tb3_2.location = DESTINATION
+```
+
+If all packages are delivered:
+
+```text
+mission.status = COMPLETED
+CompleteMission()
+SendRobotHome(...) for each idle robot
+```
+
+`SendRobotHome` maps to a one-waypoint RMF patrol task using that robot's configured home waypoint.
+
+---
+
+## Multiple Packages
+
+The specification allows up to three active packages:
+
+```text
+1 package assigned to Robot 1 upstream
+1 package buffered at transfer B
+1 package assigned to Robot 2 downstream
+```
+
+The current rules support that bounded pipeline:
+
+```text
+Robot 1 will not start another transfer drop-off while transfer.package_buffer is occupied.
+Robot 2 can deliver one package while Robot 1 starts/loading/moving another package.
+Robot 2 can return directly from destination to transfer if another package is ready at B.
+```
+
+---
+
+## Completion Behavior
+
+When `delivered_count == total_packages`, the evaluator:
+
+```text
+sets mission.status = COMPLETED
+emits CompleteMission()
+emits SendRobotHome(robot_id) for each robot currently IDLE
+```
+
+The RMF bridge maps `SendRobotHome` to:
+
+```text
+HOME -> [robot_home_waypoint]
+```
+
+This implies the current runtime expects home waypoints to be configured:
+
+```text
+upstream_home_waypoint
+downstream_home_waypoint
+```
+
+They do not need to be special zones in the mission model; they are waypoint names used for return/home behavior.
+
+---
+
+## ROS Node Parameters
+
+Defaults:
 
 ```text
 mission_id = "m1"
@@ -253,254 +650,28 @@ downstream_home_waypoint = "wp2"
 task_summaries_topic = "task_summaries"
 ```
 
----
-
-## Main Dataflow
-
-Current RMF-connected dataflow:
-
-```text
-MissionEvent
-        ↓
-MissionManager.handle_event()
-        ↓
-MissionState update
-        ↓
-rule_evaluator.evaluate_rules()
-        ↓
-MissionAction list
-        ↓
-RmfMissionBridge.submit_action()
-        ↓
-task_api_requests
-        ↓
-RMF ApiResponse
-        ↓
-RmfMissionBridge.handle_api_response_msg()
-        ↓
-MissionManager.record_dispatch()
-        ↓
-task_summaries completion update
-        ↓
-RmfMissionBridge.handle_tasks_msg()
-        ↓
-MissionEvent
-```
-
-The mission core remains ROS-free; the ROS node owns topic I/O.
+The current implementation has one shared staging waypoint and one home waypoint setting per robot.
 
 ---
 
-## Current One-Package Workflow
+## Test Coverage
 
-Initial state:
-
-```text
-mission.status = READY
-P1 = AT_SOURCE
-tb3_1 = IDLE
-tb3_2 = IDLE
-transfer.robot_occupancy = None
-transfer.package_buffer = None
-transfer.waiting_robot = None
-transfer.waiting_package = None
-```
-
-### 1. Start Mission
-
-Input event:
+Current tests cover:
 
 ```text
-MissionStarted
+one-package timer-driven mission completion
+pause blocks new dispatch
+Robot 1 direct source-to-transfer when B is available
+Robot 1 source-to-staging fallback when B is occupied
+Robot 2 direct destination-to-transfer return
+RMF payload generation
+successful and failed RMF API responses
+ack responses not consuming pending requests
+task completion to mission event mapping
+duplicate task completion suppression
+custom robot names and home waypoints
+bridge-driven one-package completion
 ```
-
-State update:
-
-```text
-mission.status = RUNNING
-```
-
-Rule output:
-
-```text
-DispatchTask(tb3_1, P1, SOURCE_TO_STAGING)
-```
-
-The bridge submits a robot-specific RMF patrol task:
-
-```text
-places = [source_waypoint, staging_waypoint]
-```
-
-### 2. RMF Accepts Upstream Dispatch
-
-After RMF responds successfully, the bridge calls:
-
-```text
-MissionManager.record_dispatch(action, task_id)
-```
-
-State update:
-
-```text
-tb3_1.active_task_id = task_id
-tb3_1.active_package_id = P1
-tb3_1.status = MOVING
-P1.upstream_task_id = task_id
-P1.status = INBOUND_TO_TRANSFER
-```
-
-The bridge stores:
-
-```text
-task_context_by_id[task_id] = (mission_id, tb3_1, P1, SOURCE_TO_STAGING)
-```
-
-### 3. Robot 1 Arrives At Staging
-
-When RMF reports the source-to-staging task completed, the bridge emits:
-
-```text
-RobotArrivedAtStaging(tb3_1, P1, task_id)
-```
-
-State update:
-
-```text
-tb3_1.status = WAITING_AT_STAGING
-tb3_1.active_task_id = None
-tb3_1.active_package_id = P1
-transfer.waiting_robot = tb3_1
-transfer.waiting_package = P1
-P1.upstream_task_id = None
-P1.status = INBOUND_TO_TRANSFER
-```
-
-Rule output, if transfer entry is allowed:
-
-```text
-DispatchTask(tb3_1, P1, STAGING_TO_TRANSFER)
-```
-
-### 4. Robot 1 Completes Transfer Drop-Off
-
-When RMF reports the staging-to-transfer task completed, the bridge emits:
-
-```text
-UpstreamLegCompleted(tb3_1, P1, task_id)
-```
-
-State update:
-
-```text
-P1.status = AT_TRANSFER
-P1.upstream_task_id = None
-transfer.package_buffer = P1
-transfer.robot_occupancy = None
-tb3_1.status = IDLE
-tb3_1.active_task_id = None
-tb3_1.active_package_id = None
-```
-
-Rule output:
-
-```text
-DispatchTask(tb3_2, P1, HOME_TO_TRANSFER)
-```
-
-### 5. Robot 2 Completes Transfer Pickup
-
-When RMF reports the home-to-transfer task completed, the bridge emits:
-
-```text
-DownstreamPickupCompleted(tb3_2, P1, task_id)
-```
-
-State update:
-
-```text
-P1.status = INBOUND_TO_DESTINATION
-P1.downstream_task_id = None
-transfer.package_buffer = None
-transfer.robot_occupancy = None
-tb3_2.status = IDLE
-tb3_2.active_task_id = None
-tb3_2.active_package_id = P1
-```
-
-Rule output:
-
-```text
-DispatchTask(tb3_2, P1, TRANSFER_TO_DESTINATION)
-```
-
-### 6. Robot 2 Completes Final Delivery
-
-When RMF reports the transfer-to-destination task completed, the bridge emits:
-
-```text
-DownstreamLegCompleted(tb3_2, P1, task_id)
-```
-
-State update:
-
-```text
-P1.status = DELIVERED
-P1.downstream_task_id = None
-delivered_count += 1
-tb3_2.status = IDLE
-tb3_2.active_task_id = None
-tb3_2.active_package_id = None
-```
-
-Rule output, if all packages are delivered:
-
-```text
-CompleteMission
-SendRobotHome(...) for each idle robot
-```
-
-`SendRobotHome` is submitted as an RMF patrol task with one home waypoint.
-
----
-
-## Important Design Notes
-
-Events and actions are deliberately separate:
-
-```text
-Events = things that happened
-Actions = things the mission manager wants done next
-```
-
-The mission core does not publish RMF tasks. It returns actions. The RMF bridge consumes those actions and the ROS node publishes the resulting requests.
-
-Task IDs must be recorded immediately after dispatch succeeds:
-
-```text
-package.upstream_task_id or package.downstream_task_id = task_id
-robot.active_task_id = task_id
-```
-
-This prevents repeated events or repeated rule evaluation from dispatching duplicate work.
-
----
-
-## Current Test Coverage
-
-Implemented unittest coverage:
-
-* one-package mission completes
-* pause blocks new dispatch
-* dispatch payload uses `robot_task_request`
-* successful RMF response records task context
-* failed RMF response does not record dispatch
-* ack responses do not consume pending requests
-* completed task IDs map to mission events
-* duplicate completion emits no second event
-* task summary completion advances the mission
-* custom robot names are used by the manager and bridge
-* bridge can drive one package from start to completion with mocked RMF responses/completions
 
 Verification command:
 
@@ -512,97 +683,136 @@ PYTHONPATH=rmf_ws/src/mrd_mission_manager python3 -m unittest discover -s rmf_ws
 
 ## Current Limitations
 
-Not implemented yet:
+Still not implemented:
 
-* Mission API
-* rmf-web mission tab
-* persistent storage
-* fault recovery and retry policy for rejected RMF tasks
-* hard pause/cancel/resume of active RMF tasks
-* Robot 2 proactive staging while Robot 1 is still unloading/occupying transfer B
-* simulated package loading/unloading delays
-* live-system validation against a running RMF deployment
+```text
+Mission API
+rmf-web mission tab
+persistent storage
+launch/config file for demo deployment
+fault recovery and retry policy for rejected RMF tasks
+operator-visible failure state
+hard pause/cancel/resume of active RMF tasks
+live-system validation against a running RMF deployment
+separate upstream/downstream staging waypoints
+```
+
+The current package is still a fixed two-robot mission layer, not a general multi-robot planner.
 
 ---
 
-## Deferred Behavior Notes
+## Next Steps
 
-### Robot 2 Staging While Transfer Is Occupied
-
-Current behavior is safe but passive:
-
-```text
-Robot 2 finishes delivery
-Robot 1 is still occupying transfer B
-No package is ready for pickup yet
-Robot 2 stays logically IDLE
-```
-
-The mission manager will not dispatch Robot 2 into B while Robot 1 occupies it, but it also does not yet send Robot 2 to staging X to wait near B.
-
-Desired later behavior:
-
-```text
-IF Robot 2 is IDLE
-AND Robot 1 is occupying or about to occupy transfer B
-AND upstream work is expected to produce a package soon
-THEN dispatch Robot 2 to staging X
-```
-
-Then, once Robot 1 has exited and the package is buffered:
-
-```text
-IF Robot 2 is waiting at staging X
-AND transfer.package_buffer contains package_id
-AND transfer.robot_occupancy is None
-THEN dispatch Robot 2 from staging X into transfer B
-```
-
-This likely needs either a downstream-specific staging state or a more general waiting-robot model, because Robot 2 may wait at staging without carrying a package.
-
-### Simulated Loading And Unloading Timers
-
-Current behavior treats handling as immediate:
-
-```text
-UpstreamLegCompleted
-  -> package immediately becomes AT_TRANSFER
-
-DownstreamPickupCompleted
-  -> package immediately becomes INBOUND_TO_DESTINATION
-
-DownstreamLegCompleted
-  -> package immediately becomes DELIVERED
-```
-
-Desired later behavior is a short simulated delay:
-
-```text
-robot reaches handling point
-  -> robot status becomes LOADING or UNLOADING
-  -> start timer for a few seconds
-  -> timer completion emits a mission event
-  -> package state changes
-  -> rule evaluator dispatches next movement
-```
-
-Likely additions:
-
-```text
-RobotStatus.LOADING
-RobotStatus.UNLOADING
-StartHandlingTimer action
-HandlingTimerCompleted event
-```
-
-This should be implemented before the demo if the UI needs to show realistic package handling time.
+1. Validate `mission_manager_node` against a live RMF deployment.
+2. Confirm RMF topic names, response JSON, and task summary completion fields.
+3. Add launch/config files for final demo waypoint names.
+4. Add rejected-task retry or operator-visible failure handling.
+5. Add Mission API endpoints.
+6. Add rmf-web mission tab.
 
 ---
 
-## Next Implementation Steps
+## Web/API Development Plan
 
-1. Validate `mission_manager_node` against a live RMF deployment and confirm topic names, response payloads, and task summary completion fields.
-2. Add launch/config files for the mission manager node once the demo waypoint names are final.
-3. Add rejected-task retry or operator-visible failure handling.
-4. Add Mission API endpoints.
-5. Add rmf-web mission tab.
+The web-facing mission layer should be built after the ROS mission node has been validated against a live RMF deployment.
+
+Recommended major steps:
+
+### 1. Expose Mission State
+
+Add a mission-state serialization layer that can return:
+
+```text
+mission status
+total packages
+delivered count
+remaining count
+package statuses
+robot statuses
+robot logical locations
+active package/task IDs
+transfer robot occupancy
+transfer package buffer
+waiting robot/package at staging
+recent mission events/actions
+```
+
+This should be implemented close to the mission core so both tests and the future API can use the same state shape.
+
+### 2. Add Mission API Backend
+
+Add backend endpoints for mission control:
+
+```text
+POST /missions
+POST /missions/{mission_id}/start
+POST /missions/{mission_id}/pause
+POST /missions/{mission_id}/resume
+POST /missions/{mission_id}/abort
+GET  /missions/{mission_id}
+```
+
+The backend can either:
+
+```text
+run the MissionManager in-process
+```
+
+or:
+
+```text
+communicate with the ROS mission_manager_node
+```
+
+For the current project, prefer keeping one mission authority. If the ROS node owns the live mission, the API backend should observe/control that node rather than creating a separate mission manager instance.
+
+### 3. Add Live Updates
+
+The UI should not rely only on manual refresh. Add either:
+
+```text
+WebSocket updates
+Server-Sent Events
+short polling
+```
+
+The live stream should include mission state changes, recent events, emitted actions, RMF task IDs, and rejected-task/failure messages.
+
+### 4. Add rmf-web Mission Tab
+
+
+```text
+mission status and controls
+delivered / total package count
+package table or compact package progress list
+Robot 1 and Robot 2 status/location/current task
+transfer B occupancy and package buffer
+staging/waiting state
+recent mission event log
+RMF task request/response status for debugging
+```
+
+Controls:
+
+```text
+create mission
+start
+pause
+resume
+abort
+```
+
+### 5. Add Debug Visibility
+
+Before polishing the UI, expose enough detail to validate behavior:
+
+```text
+last emitted action
+last consumed event
+active RMF task IDs
+handling timer currently running
+current package assigned to each robot
+current transfer occupancy/buffer state
+```
+
+This is important because the mission layer currently has no dedicated UI and only minimal ROS logs.
