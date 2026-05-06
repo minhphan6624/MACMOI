@@ -21,6 +21,13 @@ class RobotArrivedAtStaging:
 
 
 @dataclass(frozen=True)
+class DownstreamRobotArrivedAtStaging:
+    mission_id: str
+    robot_id: str
+    task_id: str
+
+
+@dataclass(frozen=True)
 class UpstreamLegCompleted:
     mission_id: str
     robot_id: str
@@ -42,6 +49,14 @@ class DownstreamLegCompleted:
     robot_id: str
     package_id: str
     task_id: str
+
+
+@dataclass(frozen=True)
+class HandlingTimerCompleted:
+    mission_id: str
+    robot_id: str
+    package_id: str
+    handling_type: str
 
 
 @dataclass(frozen=True)
