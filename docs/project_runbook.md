@@ -52,6 +52,18 @@ colcon build --cmake-args -DCMAKE_BUILD_TYPE=Release
 If the venv is active during builds, install ROS build-helper Python packages in
 that venv as needed, e.g. `catkin_pkg`.
 
+To rebuild only the mission manager package after mission-layer code changes:
+
+```bash
+cd /home/minhqphan/projects/MACMOI/rmf_ws
+source /opt/ros/jazzy/setup.bash
+source .venv/bin/activate
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+colcon build --packages-select mrd_mission_manager
+source install/setup.bash
+```
+
 ## 2.2. Build `robot_ws`
 
 If `robot_ws` has not been built on the robot PC, build it with `colcon` before
@@ -438,9 +450,173 @@ ros2 run rmf_demos_tasks dispatch_patrol \
 
 A single robot will still execute accepted tasks one after the other.
 
+## 4.8. Run the Mission Layer Node
+
+Use this after the two-robot RMF setup is running and both robots are visible in
+fleet state. The current mission layer assumes:
+
+```text
+tb3_1 = upstream robot
+tb3_2 = downstream robot
+wp1 = source / upstream home
+wp2 = staging / downstream home
+wp3 = transfer
+wp4 = destination
+```
+
+Run on the central PC:
+
+```bash
+source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
+source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+ros2 run mrd_mission_manager mission_manager_node \
+  --ros-args \
+  -p mission_id:=m1 \
+  -p total_packages:=1 \
+  -p auto_start:=true \
+  -p fleet_name:=tb3_lab \
+  -p upstream_robot:=tb3_1 \
+  -p downstream_robot:=tb3_2 \
+  -p source_waypoint:=wp1 \
+  -p staging_waypoint:=wp2 \
+  -p transfer_waypoint:=wp3 \
+  -p destination_waypoint:=wp4 \
+  -p upstream_home_waypoint:=wp1 \
+  -p downstream_home_waypoint:=wp2 \
+  -p task_summaries_topic:=task_summaries
+```
+
+For a multi-package smoke test, change `total_packages`:
+
+```bash
+-p total_packages:=3
+```
+
+Expected node logs are currently minimal. You should see lines like:
+
+```text
+Published mission task request <request_id>
+Mission task accepted: <task_id>
+```
+
+The mission layer also creates 5 second internal loading/unloading timers, but
+those timers are not currently exposed as ROS topics.
+
+## 4.9. Watch Mission Layer RMF Traffic
+
+Use these in separate central-PC terminals while `mission_manager_node` is
+running:
+
+```bash
+source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
+source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+```
+
+Verify the RMF task API topics exist:
+
+```bash
+ros2 topic list | grep task
+```
+
+Expected topics:
+
+```text
+/task_api_requests
+/task_api_responses
+/task_summaries
+```
+
+Check topic types:
+
+```bash
+ros2 topic info /task_api_requests
+ros2 topic info /task_api_responses
+ros2 topic info /task_summaries
+```
+
+Expected types:
+
+```text
+rmf_task_msgs/msg/ApiRequest
+rmf_task_msgs/msg/ApiResponse
+rmf_task_msgs/msg/Tasks
+```
+
+Echo mission-submitted task requests:
+
+```bash
+ros2 topic echo /task_api_requests
+```
+
+Look for labels in `json_msg` such as:
+
+```text
+mission_id=m1
+app=mrd_mission_manager
+package_id=P1
+segment=source_to_transfer
+segment=source_to_staging
+segment=staging_to_transfer
+segment=transfer_to_destination
+```
+
+Echo RMF task API responses:
+
+```bash
+ros2 topic echo /task_api_responses
+```
+
+Echo task summaries and completion state:
+
+```bash
+ros2 topic echo /task_summaries
+```
+
+Check that the dispatcher is running:
+
+```bash
+ros2 node list | grep task
+```
+
+The RMF core launch starts `rmf_task_dispatcher`, which should subscribe to
+`task_api_requests` and publish `task_api_responses`.
+
 # 5. Verification and Checks
 
 Put all checks here after the system is up.
+
+## 5.0. Mission Layer Unit Tests
+
+These tests do not require a running ROS graph or RMF deployment.
+
+Run on the central PC:
+
+```bash
+cd /home/minhqphan/projects/MACMOI
+PYTHONPATH=rmf_ws/src/mrd_mission_manager \
+  python3 -m unittest discover -s rmf_ws/src/mrd_mission_manager/test
+```
+
+Expected result:
+
+```text
+Ran 14 tests
+
+OK
+```
+
+If you want to confirm Python syntax/imports after editing the package:
+
+```bash
+cd /home/minhqphan/projects/MACMOI
+PYTHONPATH=rmf_ws/src/mrd_mission_manager \
+  python3 -m compileall -q \
+  rmf_ws/src/mrd_mission_manager/mrd_mission_manager \
+  rmf_ws/src/mrd_mission_manager/test
+```
 
 ## 5.1. Verify Robot Localization
 
