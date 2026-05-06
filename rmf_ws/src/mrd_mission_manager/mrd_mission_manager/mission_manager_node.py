@@ -96,7 +96,7 @@ class MissionManagerNode(Node):
         self.get_logger().info(f"Published mission task request {request_id}")
 
     def _handle_api_response(self, msg: ApiResponse) -> None:
-        task_id = self.bridge.handle_api_response_msg(msg)
+        task_id = self.bridge.handle_api_response(msg)
         if task_id is not None:
             self.get_logger().info(f"Mission task accepted: {task_id}")
 

@@ -30,6 +30,19 @@ def success_response(task_id):
     )
 
 
+def api_response(request_id, response_json, msg_type=2):
+    return SimpleNamespace(
+        request_id=request_id,
+        json_msg=response_json,
+        type=msg_type,
+        TYPE_RESPONDING=2,
+    )
+
+
+def completed_task_summary(task_id):
+    return SimpleNamespace(task_id=task_id, state=2, STATE_COMPLETED=2)
+
+
 class TestRmfMissionBridge(unittest.TestCase):
     def test_dispatch_payload_uses_robot_task_patrol_request(self):
         manager = MissionManager.create("m1", 1)
@@ -55,7 +68,9 @@ class TestRmfMissionBridge(unittest.TestCase):
         action = DispatchTask("tb3_1", "P1", TaskSegment.SOURCE_TO_STAGING)
 
         request_id = bridge.submit_action(action)
-        task_id = bridge.handle_api_response(request_id, success_response("task_1"))
+        task_id = bridge.handle_api_response(
+            api_response(request_id, success_response("task_1"))
+        )
 
         self.assertEqual(task_id, "task_1")
         self.assertEqual(len(published), 1)
@@ -73,8 +88,10 @@ class TestRmfMissionBridge(unittest.TestCase):
 
         request_id = bridge.submit_action(action)
         task_id = bridge.handle_api_response(
-            request_id,
-            json.dumps({"success": False, "errors": [{"detail": "failed"}]}),
+            api_response(
+                request_id,
+                json.dumps({"success": False, "errors": [{"detail": "failed"}]}),
+            )
         )
 
         self.assertIsNone(task_id)
@@ -93,7 +110,7 @@ class TestRmfMissionBridge(unittest.TestCase):
             TYPE_RESPONDING=2,
         )
 
-        task_id = bridge.handle_api_response_msg(ack)
+        task_id = bridge.handle_api_response(ack)
 
         self.assertIsNone(task_id)
         self.assertIn(request_id, bridge.pending_actions)
@@ -119,7 +136,9 @@ class TestRmfMissionBridge(unittest.TestCase):
             ):
                 action = DispatchTask("tb3_2", "P1", segment)
             request_id = bridge.submit_action(action)
-            bridge.handle_api_response(request_id, success_response(f"{segment.value}_id"))
+            bridge.handle_api_response(
+                api_response(request_id, success_response(f"{segment.value}_id"))
+            )
 
             event = bridge.event_from_completed_task(f"{segment.value}_id")
 
@@ -130,7 +149,7 @@ class TestRmfMissionBridge(unittest.TestCase):
         bridge = RmfMissionBridge(manager)
         action = DispatchTask("tb3_1", "P1", TaskSegment.SOURCE_TO_STAGING)
         request_id = bridge.submit_action(action)
-        bridge.handle_api_response(request_id, success_response("task_1"))
+        bridge.handle_api_response(api_response(request_id, success_response("task_1")))
 
         first = bridge.event_from_completed_task("task_1")
         second = bridge.event_from_completed_task("task_1")
@@ -143,7 +162,7 @@ class TestRmfMissionBridge(unittest.TestCase):
         bridge = RmfMissionBridge(manager)
         action = PositionRobot("tb3_2", TaskSegment.HOME_TO_STAGING)
         request_id = bridge.submit_action(action)
-        bridge.handle_api_response(request_id, success_response("stage_1"))
+        bridge.handle_api_response(api_response(request_id, success_response("stage_1")))
 
         event = bridge.event_from_completed_task("stage_1")
 
@@ -170,9 +189,8 @@ class TestRmfMissionBridge(unittest.TestCase):
             action for action in actions if isinstance(action, DispatchTask)
         )
         request_id = bridge.submit_action(dispatch_action)
-        bridge.handle_api_response(request_id, success_response("task_1"))
-        task_summary = SimpleNamespace(task_id="task_1", state=2, STATE_COMPLETED=2)
-        next_actions = bridge.handle_task_state_update(task_summary)
+        bridge.handle_api_response(api_response(request_id, success_response("task_1")))
+        next_actions = bridge.handle_task_state_update(completed_task_summary("task_1"))
 
         self.assertEqual(
             next_actions,
@@ -248,8 +266,8 @@ class TestRmfMissionBridge(unittest.TestCase):
                 task_id = f"t{task_index}"
                 task_index += 1
                 request_id = bridge.submit_action(dispatch_actions[0])
-                bridge.handle_api_response(request_id, success_response(task_id))
-                actions = bridge.handle_completed_task(task_id)
+                bridge.handle_api_response(api_response(request_id, success_response(task_id)))
+                actions = bridge.handle_task_state_update(completed_task_summary(task_id))
                 continue
 
             position_actions = [
@@ -259,8 +277,8 @@ class TestRmfMissionBridge(unittest.TestCase):
             task_id = f"s{task_index}"
             task_index += 1
             request_id = bridge.submit_action(position_actions[0])
-            bridge.handle_api_response(request_id, success_response(task_id))
-            actions = bridge.handle_completed_task(task_id)
+            bridge.handle_api_response(api_response(request_id, success_response(task_id)))
+            actions = bridge.handle_task_state_update(completed_task_summary(task_id))
 
         self.assertEqual(manager.state.status, MissionStatus.COMPLETED)
         self.assertEqual(manager.state.delivered_count, 1)
