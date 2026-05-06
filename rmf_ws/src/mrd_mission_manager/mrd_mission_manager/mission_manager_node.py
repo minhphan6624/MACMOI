@@ -6,8 +6,8 @@ from rclpy.qos import QoSProfile
 from rclpy.qos import ReliabilityPolicy
 from rmf_task_msgs.msg import ApiRequest, ApiResponse, Tasks
 
-from .actions import DispatchTask, SendRobotHome
-from .events import MissionStarted
+from .actions import DispatchTask, PositionRobot, SendRobotHome, StartHandlingTimer
+from .events import HandlingTimerCompleted, MissionStarted
 from .mission_manager import MissionManager
 from .rmf_bridge import MissionBridgeConfig, RmfMissionBridge
 
@@ -83,6 +83,7 @@ class MissionManagerNode(Node):
             publish_request=self._publish_api_request,
             logger=self.get_logger(),
         )
+        self.handling_timers = []
 
         if self.get_parameter("auto_start").value:
             self._dispatch_actions(self.manager.handle_event(MissionStarted(mission_id)))
@@ -104,10 +105,31 @@ class MissionManagerNode(Node):
 
     def _dispatch_actions(self, actions) -> None:
         for action in actions:
-            if isinstance(action, (DispatchTask, SendRobotHome)):
+            if isinstance(action, (DispatchTask, PositionRobot, SendRobotHome)):
                 self.bridge.submit_action(action)
+            elif isinstance(action, StartHandlingTimer):
+                self._start_handling_timer(action)
             else:
                 self.get_logger().info(f"Mission action: {action}")
+
+    def _start_handling_timer(self, action: StartHandlingTimer) -> None:
+        timer_ref = {}
+
+        def on_timer():
+            timer_ref["timer"].cancel()
+            self._dispatch_actions(
+                self.manager.handle_event(
+                    HandlingTimerCompleted(
+                        self.manager.state.mission_id,
+                        action.robot_id,
+                        action.package_id,
+                        action.handling_type,
+                    )
+                )
+            )
+
+        timer_ref["timer"] = self.create_timer(action.seconds, on_timer)
+        self.handling_timers.append(timer_ref["timer"])
 
 
 def main(args=None):
