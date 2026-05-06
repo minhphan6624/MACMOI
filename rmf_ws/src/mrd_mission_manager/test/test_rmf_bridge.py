@@ -2,10 +2,12 @@ import json
 import unittest
 from types import SimpleNamespace
 
-from mrd_mission_manager.actions import DispatchTask
+from mrd_mission_manager.actions import DispatchTask, PositionRobot, StartHandlingTimer
 from mrd_mission_manager.events import (
     DownstreamLegCompleted,
+    DownstreamRobotArrivedAtStaging,
     DownstreamPickupCompleted,
+    HandlingTimerCompleted,
     MissionStarted,
     RobotArrivedAtStaging,
     UpstreamLegCompleted,
@@ -98,9 +100,11 @@ class TestRmfMissionBridge(unittest.TestCase):
 
     def test_completed_task_maps_to_mission_events(self):
         cases = [
+            (TaskSegment.SOURCE_TO_TRANSFER, UpstreamLegCompleted),
             (TaskSegment.SOURCE_TO_STAGING, RobotArrivedAtStaging),
             (TaskSegment.STAGING_TO_TRANSFER, UpstreamLegCompleted),
             (TaskSegment.HOME_TO_TRANSFER, DownstreamPickupCompleted),
+            (TaskSegment.DESTINATION_TO_TRANSFER, DownstreamPickupCompleted),
             (TaskSegment.TRANSFER_TO_DESTINATION, DownstreamLegCompleted),
         ]
 
@@ -110,6 +114,7 @@ class TestRmfMissionBridge(unittest.TestCase):
             action = DispatchTask("tb3_1", "P1", segment)
             if segment in (
                 TaskSegment.HOME_TO_TRANSFER,
+                TaskSegment.DESTINATION_TO_TRANSFER,
                 TaskSegment.TRANSFER_TO_DESTINATION,
             ):
                 action = DispatchTask("tb3_2", "P1", segment)
@@ -133,19 +138,45 @@ class TestRmfMissionBridge(unittest.TestCase):
         self.assertIsInstance(first, RobotArrivedAtStaging)
         self.assertIsNone(second)
 
+    def test_position_task_completion_maps_to_downstream_staging(self):
+        manager = MissionManager.create("m1", 1)
+        bridge = RmfMissionBridge(manager)
+        action = PositionRobot("tb3_2", TaskSegment.HOME_TO_STAGING)
+        request_id = bridge.submit_action(action)
+        bridge.handle_api_response(request_id, success_response("stage_1"))
+
+        event = bridge.event_from_completed_task("stage_1")
+
+        self.assertIsInstance(event, DownstreamRobotArrivedAtStaging)
+
     def test_task_summary_completion_advances_mission(self):
         manager = MissionManager.create("m1", 1)
         bridge = RmfMissionBridge(manager)
         actions = manager.handle_event(MissionStarted("m1"))
 
-        request_id = bridge.submit_action(actions[0])
+        source_load = next(
+            action for action in actions if isinstance(action, StartHandlingTimer)
+        )
+        actions = manager.handle_event(
+            HandlingTimerCompleted(
+                "m1",
+                source_load.robot_id,
+                source_load.package_id,
+                source_load.handling_type,
+            )
+        )
+
+        dispatch_action = next(
+            action for action in actions if isinstance(action, DispatchTask)
+        )
+        request_id = bridge.submit_action(dispatch_action)
         bridge.handle_api_response(request_id, success_response("task_1"))
         task_summary = SimpleNamespace(task_id="task_1", state=2, STATE_COMPLETED=2)
         next_actions = bridge.handle_task_state_update(task_summary)
 
         self.assertEqual(
             next_actions,
-            [DispatchTask("tb3_1", "P1", TaskSegment.STAGING_TO_TRANSFER)],
+            [StartHandlingTimer("tb3_1", "P1", "transfer_unload")],
         )
 
     def test_custom_robot_names_are_used_by_manager_and_bridge(self):
@@ -161,32 +192,73 @@ class TestRmfMissionBridge(unittest.TestCase):
         )
 
         actions = manager.handle_event(MissionStarted("m1"))
-        payload = bridge.build_payload(actions[0])
+        source_load = next(
+            action for action in actions if isinstance(action, StartHandlingTimer)
+        )
+        actions = manager.handle_event(
+            HandlingTimerCompleted(
+                "m1",
+                source_load.robot_id,
+                source_load.package_id,
+                source_load.handling_type,
+            )
+        )
+        dispatch_actions = [
+            action for action in actions if isinstance(action, DispatchTask)
+        ]
+        payload = bridge.build_payload(dispatch_actions[0])
 
-        self.assertEqual(
+        self.assertIn(
+            DispatchTask(
+                "upstream_bot",
+                "P1",
+                TaskSegment.SOURCE_TO_TRANSFER,
+            ),
             actions,
-            [
-                DispatchTask(
-                    "upstream_bot",
-                    "P1",
-                    TaskSegment.SOURCE_TO_STAGING,
-                )
-            ],
         )
         self.assertEqual(payload["robot"], "upstream_bot")
-        self.assertEqual(bridge.places_for("downstream_bot", TaskSegment.HOME), ["down_home"])
+        self.assertEqual(bridge.get_waypoints("downstream_bot", TaskSegment.HOME), ["down_home"])
 
     def test_bridge_can_drive_one_package_to_completion(self):
         manager = MissionManager.create("m1", 1)
         bridge = RmfMissionBridge(manager)
 
         actions = manager.handle_event(MissionStarted("m1"))
-        for index, task_id in enumerate(["t1", "t2", "t3", "t4"], start=1):
+        task_index = 1
+        while manager.state.status != MissionStatus.COMPLETED:
+            timer_actions = [
+                action for action in actions if isinstance(action, StartHandlingTimer)
+            ]
+            if timer_actions:
+                action = timer_actions[0]
+                actions = manager.handle_event(
+                    HandlingTimerCompleted(
+                        manager.state.mission_id,
+                        action.robot_id,
+                        action.package_id,
+                        action.handling_type,
+                    )
+                )
+                continue
+
             dispatch_actions = [
                 action for action in actions if isinstance(action, DispatchTask)
             ]
-            self.assertTrue(dispatch_actions)
-            request_id = bridge.submit_action(dispatch_actions[0])
+            if dispatch_actions:
+                task_id = f"t{task_index}"
+                task_index += 1
+                request_id = bridge.submit_action(dispatch_actions[0])
+                bridge.handle_api_response(request_id, success_response(task_id))
+                actions = bridge.handle_completed_task(task_id)
+                continue
+
+            position_actions = [
+                action for action in actions if isinstance(action, PositionRobot)
+            ]
+            self.assertTrue(position_actions)
+            task_id = f"s{task_index}"
+            task_index += 1
+            request_id = bridge.submit_action(position_actions[0])
             bridge.handle_api_response(request_id, success_response(task_id))
             actions = bridge.handle_completed_task(task_id)
 
