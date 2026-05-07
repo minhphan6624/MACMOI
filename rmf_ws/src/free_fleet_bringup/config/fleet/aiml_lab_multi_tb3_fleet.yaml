@@ -30,7 +30,7 @@ rmf_fleet:
   responsive_wait: true
   robots:
     tb3_1:
-      charger: "wp1"
+      charger: "robot1_home"
       responsive_wait: false
       navigation_stack: 2
       init_timeout_sec: 30
@@ -41,7 +41,7 @@ rmf_fleet:
         LG:
           map_url: "/home/minhqphan/projects/MACMOI/robot_ws/src/robot_bringup/maps/aiml_lab.yaml"
     tb3_2:
-      charger: "wp2"
+      charger: "robot2_home"
       responsive_wait: false
       navigation_stack: 2
       init_timeout_sec: 30
@@ -56,12 +56,12 @@ rmf_fleet:
 reference_coordinates:
   LG:
     rmf:
-      - [11.238941708114272, -3.7840339923643755]
-      - [11.125732088821865, -5.676075663703339]
-      - [14.004187827474095, -5.934819357665889]
-      - [13.955676469250713, -3.9134305145024273]
+      - [12.854374871984213, -3.8726671555069916]
+      - [12.942662582931954, -5.815638350433473]
+      - [10.14306864533869, -5.029635906462173]
+      - [15.759973283091028, -5.1444247357883]
     robot:
-      - [-2.1961, 2.1682]
-      - [-2.3108, 0.2512]
-      - [0.6056, -0.0110]
-      - [0.5564, 2.0371]
+      - [-0.5594, 2.0784]
+      - [-0.4699, 0.1098]
+      - [-3.3064, 0.9062]
+      - [2.3845, 0.7899]
