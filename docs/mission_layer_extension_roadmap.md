@@ -53,7 +53,104 @@ The UI should display mission state and may also display lower-level RMF/debug e
 
 ---
 
-## 2. Raw Events vs Mission Events
+## 2. Operator Runtime Model
+
+The long-term mission manager should be a persistent node, not a one-mission
+process that needs to be killed between runs.
+
+Current behavior is still one-shot:
+
+```text
+node starts
+constructs one mission state
+optionally auto-starts
+continues running after mission completion
+```
+
+That is acceptable for early smoke testing, but the operator-facing runtime
+should become:
+
+```text
+node stays online
+mission is submitted as a job
+operator starts/pauses/resumes/aborts it
+terminal mission is cleared/reset
+another mission can be submitted without restarting the node
+```
+
+This aligns with the existing mission statuses:
+
+```text
+CREATED
+READY
+RUNNING
+PAUSED
+COMPLETED
+ABORTED
+```
+
+And with the existing operator events:
+
+```text
+MissionStarted
+OperatorPaused
+OperatorResumed
+OperatorAborted
+```
+
+The missing piece is the runtime command/API surface. A minimal command model:
+
+```text
+submit_mission
+start_mission
+pause_mission
+resume_mission
+abort_mission
+reset_mission / clear_completed_mission
+```
+
+Expected command effects:
+
+```text
+submit_mission
+  -> create or replace current MissionManager state
+  -> mission.status = READY
+
+start_mission
+  -> emit MissionStarted
+  -> READY -> RUNNING
+
+pause_mission
+  -> emit OperatorPaused
+  -> RUNNING -> PAUSED
+
+resume_mission
+  -> emit OperatorResumed
+  -> PAUSED -> RUNNING
+
+abort_mission
+  -> emit OperatorAborted
+  -> RUNNING/PAUSED -> ABORTED
+
+reset_mission / clear_completed_mission
+  -> discard current mission state
+  -> node returns to idle/ready-for-submit
+```
+
+An `exit_on_completion` parameter can be useful for short smoke tests, but it
+should remain a test convenience. It should not be the final operator model.
+
+Recommended implementation order:
+
+1. Add `reset` / `clear_completed` so tests can rerun without killing the node.
+2. Add `submit_mission` with mission ID, package count, robots, and waypoint config.
+3. Wire pause/resume/abort commands to the existing operator events.
+4. Update the UI to show controls based on mission state.
+5. Add persistence/history only if needed.
+
+---
+
+## 3. Raw Events vs Mission Events
 
 As the system becomes more complex, there may be more low-level events:
 
@@ -96,7 +193,7 @@ mission state + mission timeline
 
 ---
 
-## 3. First Generalization: Configuration
+## 4. First Generalization: Configuration
 
 The first extension should not be a new planner. It should make v1 names and roles configurable.
 
@@ -126,7 +223,7 @@ This keeps the logic simple while allowing robot names, waypoint names, and zone
 
 ---
 
-## 4. Robot Role Generalization
+## 5. Robot Role Generalization
 
 V1 assumes:
 
@@ -171,7 +268,7 @@ For small extensions, fixed roles can remain. For larger extensions, roles shoul
 
 ---
 
-## 5. Transfer Zone Generalization
+## 6. Transfer Zone Generalization
 
 V1 uses one transfer state:
 
@@ -206,7 +303,7 @@ Other transfer zones could have different capacities or rules.
 
 ---
 
-## 6. Package Flow Generalization
+## 7. Package Flow Generalization
 
 V1 package state is linear:
 
@@ -259,7 +356,7 @@ That is the key step toward general missions.
 
 ---
 
-## 7. Rule Evaluator Evolution
+## 8. Rule Evaluator Evolution
 
 V1 can use direct rules:
 
@@ -305,7 +402,7 @@ Behavior trees are more useful if the problem becomes robot behavior selection a
 
 ---
 
-## 8. Task Planning Evolution
+## 9. Task Planning Evolution
 
 V1 mission actions can directly dispatch waypoint task segments:
 
@@ -335,7 +432,7 @@ The RMF bridge should still hide RMF-specific task formatting from the mission p
 
 ---
 
-## 9. Suggested Evolution Path
+## 10. Suggested Evolution Path
 
 Do not jump from v1 directly to a fully generic planner.
 
@@ -347,6 +444,7 @@ v1:
 
 v1.5:
   configurable robot names, waypoint names, source, transfer, destination
+  persistent runtime node with submit/start/reset controls
 
 v2:
   N robots, still fixed route pattern, simple deterministic rules
@@ -365,7 +463,7 @@ This keeps each step testable.
 
 ---
 
-## 10. Practical Design Rule
+## 11. Practical Design Rule
 
 The mission layer should become more general only when the mission requires it.
 
@@ -381,6 +479,7 @@ But isolate the parts likely to change:
 
 * robot names and roles
 * zone and waypoint names
+* mission submit/start/pause/resume/abort/reset command handling
 * RMF task dispatch mapping
 * transfer/resource rules
 * mission state transition logic

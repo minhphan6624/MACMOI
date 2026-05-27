@@ -154,14 +154,14 @@ On robot 1:
 
 ```bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-zenoh-bridge-ros2dds -c ~/zenoh/config/tb3_robot1_zenoh.json5
+~/zenoh/bin/zenoh-bridge-ros2dds -c ~/zenoh/config/tb3_robot1_zenoh.json5
 ```
 
 On robot 2:
 
 ```bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-zenoh-bridge-ros2dds -c ~/zenoh/config/tb3_robot2_zenoh.json5
+~/zenoh/bin/zenoh-bridge-ros2dds -c ~/zenoh/config/tb3_robot2_zenoh.json5
 ```
 
 The bridge namespaces must match the fleet robot names: `tb3_1` and `tb3_2`.
@@ -203,7 +203,7 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ros2 run mrd_mission_manager mission_manager_node \
   --ros-args \
   -p mission_id:=m1 \
-  -p total_packages:=1 \
+  -p total_packages:=3 \
   -p auto_start:=true \
   -p fleet_name:=tb3_lab \
   -p upstream_robot:=tb3_1 \

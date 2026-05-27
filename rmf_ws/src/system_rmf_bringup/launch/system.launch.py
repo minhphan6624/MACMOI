@@ -19,7 +19,7 @@ def generate_launch_description():
     fleet_pkg = FindPackageShare('free_fleet_bringup')
 
     building_file = PathJoinSubstitution([system_pkg, 'maps', 'aiml-lab.building.yaml'])
-    default_nav_graph_file = PathJoinSubstitution([system_pkg, 'nav_graphs', 'graph_0.yaml'])
+    default_nav_graph_file = PathJoinSubstitution([system_pkg, 'nav_graphs', '1.yaml'])
     default_viz_config_file = PathJoinSubstitution([system_pkg, 'config', 'rmf.rviz'])
     rmf_core_launch = PathJoinSubstitution([system_pkg, 'launch', 'rmf_core.launch.xml'])
     fleet_config_file = PathJoinSubstitution(
