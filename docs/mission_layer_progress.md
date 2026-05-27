@@ -261,7 +261,10 @@ The same segment can have different mission meaning depending on the robot/conte
 ```text
 publishing ApiRequest messages to task_api_requests
 subscribing to ApiResponse messages from task_api_responses
-subscribing to Tasks messages from task_summaries
+subscribing to TaskSummary messages from task_summaries
+subscribing to FleetState messages from fleet_states as a completion fallback
+publishing mission state JSON on mission_state
+subscribing to mission command JSON on mission_commands
 starting ROS timers for StartHandlingTimer actions
 feeding timer completions and RMF completions back into MissionManager
 ```
@@ -285,7 +288,7 @@ DispatchTask / PositionRobot
   -> task_api_requests
   -> task_api_responses
   -> record_dispatch() or record_position_dispatch()
-  -> task_summaries completion
+  -> task_summaries completion, or fleet_states fallback completion
   -> bridge maps task ID back to mission event
 ```
 
@@ -303,6 +306,233 @@ StartHandlingTimer
 The mission core remains ROS-free. ROS topic I/O and ROS timers live in `mission_manager_node.py`.
 
 `rmf_bridge.py` is intentionally ROS-free as well. It works with plain Python objects and injected publish callbacks, which makes it testable without a running ROS graph.
+
+---
+
+## Live Integration Notes
+
+These notes record the current live-RMF debugging decisions for the AIML lab
+deployment.
+
+### Runtime Mission Lifecycle Direction
+
+The current node is still effectively single-mission-per-process:
+
+```text
+process starts
+creates one MissionManager state object
+optionally auto-starts mission m1
+keeps running after COMPLETED/ABORTED until manually stopped
+```
+
+This explains the current testing workflow: after a mission completes, the old
+node must be killed before starting a fresh mission run.
+
+This is expected for the current implementation, but it is not the desired
+operator-facing model. The target runtime model is:
+
+```text
+mission_manager_node stays alive
+operator/API submits a mission
+operator/API starts the mission
+mission runs to COMPLETED/ABORTED/FAILED
+operator/API clears or resets the terminal mission
+operator/API submits another mission
+```
+
+This aligns with the existing mission states and operator events:
+
+```text
+submit_mission       -> create fresh MissionManager state, status READY
+start_mission        -> MissionStarted, READY -> RUNNING
+pause_mission        -> OperatorPaused, RUNNING -> PAUSED
+resume_mission       -> OperatorResumed, PAUSED -> RUNNING
+abort_mission        -> OperatorAborted, RUNNING/PAUSED -> ABORTED
+reset/clear_mission  -> discard terminal/current mission, node returns idle
+```
+
+Automatic process exit on completion should only be treated as a temporary
+testing convenience, e.g. an optional `exit_on_completion` parameter for smoke
+tests. It should not replace the persistent submit/start/pause/resume/abort/reset
+operator workflow.
+
+### Current Waypoint Semantics
+
+The live mission uses these mission waypoints:
+
+```text
+wp1 = source
+wp2 = staging
+wp3 = transfer zone
+wp4 = destination
+robot1_home = upstream robot home / charger
+robot2_home = downstream robot home / charger
+```
+
+Mission manager launch parameters should match those names:
+
+```bash
+-p source_waypoint:=wp1 \
+-p staging_waypoint:=wp2 \
+-p transfer_waypoint:=wp3 \
+-p destination_waypoint:=wp4 \
+-p upstream_home_waypoint:=robot1_home \
+-p downstream_home_waypoint:=robot2_home
+```
+
+The fleet config should use the same home waypoints as charger names:
+
+```text
+tb3_1.charger = robot1_home
+tb3_2.charger = robot2_home
+```
+
+The generated RMF nav graph used by the fleet adapter is:
+
+```text
+rmf_ws/src/system_rmf_bringup/nav_graphs/1.yaml
+```
+
+`system.launch.py` defaults to `nav_graphs/1.yaml`. `graph_0.yaml` is an older
+stale graph and should not be passed to the launch unless intentionally
+debugging old behavior.
+
+The intended graph shape is:
+
+```text
+robot1_home <-> wp1
+robot2_home <-> wp2
+wp1 <-> wp3
+wp2 <-> wp3
+wp3 <-> wp4
+```
+
+The earlier four-waypoint loop allowed `wp1 -> wp3` to route through `wp4`,
+which made Robot 1 visit the destination before the transfer zone. That graph
+was semantically wrong for this mission even if it was geometrically valid.
+
+### ROS Topic Discovery
+
+During debugging, ROS 2 CLI discovery was unreliable through the daemon. The
+working procedure is:
+
+```bash
+pkill -f ros2cli.daemon
+rm -rf ~/.ros/ros2cli
+ros2 topic list --no-daemon
+```
+
+All terminals should use the same RMW implementation:
+
+```bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+```
+
+Use `--no-daemon` for topic inspection while debugging this deployment.
+
+### Task Summary Type Correction
+
+The live `/task_summaries` topic was discovered to have this mismatch:
+
+```text
+publisher:  rmf_task_msgs/msg/TaskSummary
+subscriber: rmf_task_msgs/msg/Tasks
+```
+
+That meant ROS considered the endpoints incompatible, so
+`mrd_mission_manager` never received task completion callbacks.
+
+The mission node was changed to subscribe to:
+
+```text
+rmf_task_msgs/msg/TaskSummary
+```
+
+The handler remains tolerant of the aggregate `Tasks` shape for tests or future
+deployments by checking whether the incoming message has a `tasks` field.
+
+Correct echo command:
+
+```bash
+ros2 topic echo /task_summaries rmf_task_msgs/msg/TaskSummary --no-daemon
+```
+
+### Fleet State Completion Fallback
+
+After fixing the type mismatch, `/fleet_states` continued to update but
+`/task_summaries` remained silent during mission execution. Because the current
+mission only dispatches direct, single-robot movement tasks and each mission
+robot has at most one active mission task, `/fleet_states` can provide enough
+information to infer completion.
+
+`rmf_fleet_msgs/msg/FleetState` contains:
+
+```text
+robots[].name
+robots[].task_id
+robots[].mode
+robots[].location
+robots[].path
+```
+
+The mission manager now uses `/fleet_states` as a fallback:
+
+```text
+if mission_robot.active_task_id is set
+and matching fleet robot no longer reports that task_id
+and matching fleet robot is not MODE_MOVING
+then treat the active mission task as completed
+```
+
+This is not a full replacement for `/task_summaries`.
+
+Preferred contract:
+
+```text
+/task_summaries = authoritative task lifecycle signal
+/fleet_states = robot status and fallback completion signal
+```
+
+Why the fallback is acceptable for this fixed mission:
+
+```text
+direct robot tasks only
+one active mission task per robot
+mission manager already knows the accepted task ID
+fleet_states updates reliably in the current deployment
+task_summaries is silent in the current deployment
+```
+
+Limitations of the fallback:
+
+```text
+does not distinguish completed vs failed vs canceled as cleanly
+depends on the fleet adapter clearing/changing robot.task_id
+depends on mode no longer being MODE_MOVING
+should be replaced by task_summaries once that publisher behavior is fixed
+```
+
+### Adapter Segfault Debugging
+
+The fleet adapter previously exited with code `-11` when mission tasks were
+started. Two probable triggers were identified and addressed:
+
+```text
+1. Zero-length downstream reposition task:
+   downstream_home_waypoint == staging_waypoint caused HOME_TO_STAGING to
+   become wp2 -> wp2.
+
+2. Stale queued direct requests from the web/API server:
+   adapter logs showed queue flush/direct request behavior for old tb3_2 tasks.
+```
+
+The mission node now marks the downstream robot as already staged when
+`downstream_home_waypoint == staging_waypoint`, avoiding a no-op reposition
+task. The live map was also changed to use separate `robot2_home` and `wp2`.
+
+When debugging adapter crashes, run without `server_uri` first to avoid stale
+API queue effects. If it still crashes, run the adapter under `gdb` and collect
+`bt`; exit code `-11` means a native crash below Python.
 
 ---
 
@@ -648,6 +878,17 @@ upstream_home_waypoint = "wp1"
 downstream_home_waypoint = "wp2"
 
 task_summaries_topic = "task_summaries"
+fleet_states_topic = "fleet_states"
+mission_state_topic = "mission_state"
+mission_commands_topic = "mission_commands"
+```
+
+The default home waypoints are legacy defaults. The live AIML lab deployment
+currently passes explicit home waypoints:
+
+```text
+upstream_home_waypoint = "robot1_home"
+downstream_home_waypoint = "robot2_home"
 ```
 
 The current implementation has one shared staging waypoint and one home waypoint setting per robot.
@@ -671,12 +912,17 @@ task completion to mission event mapping
 duplicate task completion suppression
 custom robot names and home waypoints
 bridge-driven one-package completion
+mission state serialization
+mission command start handling
 ```
 
 Verification command:
 
 ```bash
-PYTHONPATH=rmf_ws/src/mrd_mission_manager python3 -m unittest discover -s rmf_ws/src/mrd_mission_manager/test
+source /opt/ros/jazzy/setup.bash
+source rmf_ws/.venv/bin/activate
+source rmf_ws/install/setup.bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest rmf_ws/src/mrd_mission_manager/test -q
 ```
 
 ---
@@ -693,8 +939,9 @@ launch/config file for demo deployment
 fault recovery and retry policy for rejected RMF tasks
 operator-visible failure state
 hard pause/cancel/resume of active RMF tasks
-live-system validation against a running RMF deployment
+authoritative task completion from /task_summaries in the live deployment
 separate upstream/downstream staging waypoints
+dedicated automated coverage for the live FleetState fallback path
 ```
 
 The current package is still a fixed two-robot mission layer, not a general multi-robot planner.
@@ -703,8 +950,9 @@ The current package is still a fixed two-robot mission layer, not a general mult
 
 ## Next Steps
 
-1. Validate `mission_manager_node` against a live RMF deployment.
-2. Confirm RMF topic names, response JSON, and task summary completion fields.
-3. Add launch/config files for final demo waypoint names.
-4. Add rejected-task retry or operator-visible failure handling.
-5. Add Mission API endpoints and the rmf-web mission tab. See [mission_web_development_plan.md](mission_web_development_plan.md) for the detailed web/API plan.
+1. Validate the `FleetState` fallback across a full one-package physical run.
+2. Find why the live fleet adapter advertises `/task_summaries` but does not publish summaries during mission execution.
+3. Replace or downgrade the `FleetState` fallback once `/task_summaries` works reliably.
+4. Add launch/config files for final demo waypoint names.
+5. Add rejected-task retry or operator-visible failure handling.
+6. Add Mission API endpoints and the rmf-web mission tab. See [mission_web_development_plan.md](mission_web_development_plan.md) for the detailed web/API plan.
