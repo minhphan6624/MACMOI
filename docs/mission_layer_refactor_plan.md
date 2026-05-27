@@ -4,6 +4,10 @@ This document records the architectural reason for moving beyond the current v1
 mission manager and the intended component split for the next mission-layer
 refactor.
 
+The next refactor should not only polish the existing fixed FSM shape. It should
+introduce the first generalized mission-task and resource boundaries while
+preserving the current two-robot handoff as the default behavior.
+
 It sits beside the existing mission documents:
 
 * `mission_layer_progress.md` remains the current implementation reference.
@@ -48,6 +52,17 @@ Current assumptions:
 * one shared staging waypoint near the transfer zone
 * RMF patrol-style waypoint tasks instead of native RMF delivery tasks
 * one mission state is created when the ROS node starts
+
+The current mission can be reinterpreted as two concrete instances of a more
+general transport task:
+
+```text
+transportItem(P1, source, transfer, robot_id=tb3_1)
+transportItem(P1, transfer, destination, robot_id=tb3_2)
+```
+
+This generalized view should guide the refactor even if the first implementation
+still executes the same fixed route.
 
 This design is appropriate for the first implementation because it proves the
 package handoff behavior, RMF task API integration, mission-state publication,
@@ -146,7 +161,9 @@ The current design is therefore weak for future requirements such as:
 
 * more than two robots
 * flexible robot assignment
+* configurable mission task types such as `transportItem`
 * multiple transfer zones or buffers
+* configurable resources and capacities
 * resource contention across missions
 * retries and recovery behavior
 * failures and partial cancellation
@@ -156,6 +173,10 @@ The current design is therefore weak for future requirements such as:
 
 The refactor should preserve what works while separating responsibilities so the
 mission layer can grow without turning into a larger implicit FSM.
+
+The important design choice is to build a general shape, not a general planner:
+generalized task/resource interfaces should be introduced early, while planners,
+task allocators, and formal concurrency engines should remain later extensions.
 
 ---
 
@@ -185,12 +206,41 @@ RMF / Robots
   -> Mission API / UI
 ```
 
+The target domain model should include generalized mission tasks and resources:
+
+```text
+Task type:
+  transportItem(item_id, pickup, dropoff, robot_id?)
+
+Task instance:
+  transportItem(P1, source, transfer, robot_id=tb3_1)
+
+Resource:
+  id, type, capacity, occupancy, reservations
+```
+
+The current mission's hardcoded assumptions should become the default mission
+profile:
+
+```text
+resource transfer:
+  robot_capacity = 1
+  package_capacity = 1
+
+role upstream:
+  eligible_robots = [tb3_1]
+
+role downstream:
+  eligible_robots = [tb3_2]
+```
+
 ### Mission Orchestrator
 
 The Mission Orchestrator owns mission-level lifecycle and operator-facing state.
 
 Responsibilities:
 
+* load or create mission task instances
 * submit mission
 * start mission
 * pause mission
@@ -211,6 +261,7 @@ executors.
 
 Responsibilities:
 
+* configurable resource definitions
 * robot logical state
 * package location/state
 * transfer-zone state
@@ -219,6 +270,7 @@ Responsibilities:
 * resource occupancy
 * resource reservations
 * resource acquisition/release rules
+* resource capacity validation
 * world updates derived from RMF or robot feedback
 
 The current `TransferController` is the seed of this component, but it only
@@ -230,15 +282,17 @@ The Scheduler decides what mission task should advance next.
 
 Responsibilities:
 
-* choose which package or mission task should run
+* choose which task instance should run
 * start execution units
 * avoid oversubscribing resources
 * handle simple priority decisions
 * later integrate task allocation or planning
 
-The first scheduler can keep the current deterministic rules internally. The
-important change is the boundary: scheduling decisions should no longer be
-hidden inside the mission manager.
+The first scheduler can keep the current deterministic rules internally:
+packages are processed in order, `tb3_1` handles source-to-transfer work, and
+`tb3_2` handles transfer-to-destination work. The important change is the
+boundary: scheduling decisions should operate over task/resource concepts and no
+longer be hidden inside the mission manager.
 
 ### BT Executor
 
@@ -247,6 +301,7 @@ The BT Executor executes mission-level task workflows.
 Responsibilities:
 
 * run task behavior trees
+* execute generalized task workflows such as `transportItem`
 * sequence robot actions
 * wait for conditions
 * retry or fail task steps
@@ -281,21 +336,22 @@ BTs should manage mission-task execution, not global scheduling.
 Valid BT scopes include:
 
 ```text
-Transfer(P1, source, transfer)
-UpstreamDelivery(P1)
-DownstreamDelivery(P1)
-DeliverPackage(P1, source, transfer, destination)
+transportItem(P1, source, transfer, tb3_1)
+transportItem(P1, transfer, destination, tb3_2)
+UpstreamDelivery(P1)    # fixed-mission specialization of transportItem
+DownstreamDelivery(P1)  # fixed-mission specialization of transportItem
 ```
 
 For the current fixed mission, an upstream delivery tree could look like:
 
 ```text
-UpstreamDelivery(P1)
+transportItem(P1, source, transfer, tb3_1)
   Sequence
-    LoadAtSource
+    NavigateToPickup
+    LoadItem
     AcquireTransferOrGoToStaging
-    NavigateToTransfer
-    UnloadToTransferBuffer
+    NavigateToDropoff
+    UnloadItem
     ReleaseTransfer
 ```
 
@@ -322,7 +378,7 @@ allocation, mission priority, or resource arbitration across the entire system.
 
 ## 6. Refactor Steps
 
-### Step 1: Preserve Current Behavior
+### Step 1: Preserve Current Behavior And Invariants
 
 Document current invariants and keep the fixed two-robot mission as the
 regression baseline.
@@ -335,7 +391,32 @@ Examples:
 * a completed package is not dispatched again
 * duplicate RMF task completion does not advance state twice
 
-### Step 2: Extract World / Resource Manager
+### Step 2: Define Generalized Task And Resource Models
+
+Introduce the minimal domain concepts needed for the target architecture:
+
+```text
+TransportItem task instance:
+  task_id
+  item_id
+  pickup
+  dropoff
+  robot_id
+  status
+
+Resource:
+  resource_id
+  type
+  robot_capacity
+  package_capacity
+  occupancy
+  reservations
+```
+
+The current mission should be encoded as default task instances and default
+resource settings, not as new hardcoded behavior.
+
+### Step 3: Extract World / Resource Manager
 
 Move transfer-zone ownership and transfer-related rule logic out of the current
 mission/rule path into a dedicated World/Resource Manager.
@@ -343,16 +424,16 @@ mission/rule path into a dedicated World/Resource Manager.
 The first version can still support only the existing single transfer zone. The
 goal is to establish the boundary before adding multiple resources.
 
-### Step 3: Introduce A Scheduler Interface
+### Step 4: Introduce A Scheduler Interface
 
 Wrap the current `rule_evaluator` behavior behind a Scheduler/Dispatcher
-interface.
+interface that works over task instances and resource state.
 
 The first implementation should keep the current deterministic dispatch rules.
 The architectural change is that future task allocation, priorities, and
 planner output have a clear place to plug in.
 
-### Step 4: Introduce Execution Command IDs
+### Step 5: Introduce Execution Command IDs
 
 Move toward generic execution command lifecycle tracking.
 
@@ -360,7 +441,7 @@ Instead of relying on mission-specific `TaskSegment` meaning inside the RMF
 bridge, execution commands should have stable IDs that can be submitted,
 accepted, completed, failed, or cancelled.
 
-### Step 5: Add A Lightweight Execution Layer
+### Step 6: Add A Lightweight Execution Layer
 
 Add a small execution layer that tracks command lifecycle and owns the mapping
 between task workflow steps and execution commands.
@@ -368,15 +449,15 @@ between task workflow steps and execution commands.
 This layer becomes the bridge between scheduler/BT intent and RMF adapter
 execution.
 
-### Step 6: Add BT Execution For One Workflow
+### Step 7: Add BT Execution For One Workflow
 
-Introduce BT execution for one package workflow only after the world/resource,
-scheduler, and execution-command boundaries are stable.
+Introduce BT execution for one `transportItem` workflow only after the
+world/resource, scheduler, and execution-command boundaries are stable.
 
 The first BT should preserve the existing behavior rather than add new mission
 capability.
 
-### Step 7: Add Advanced Coordination Only When Needed
+### Step 8: Add Advanced Coordination Only When Needed
 
 Add planners, task allocators, or Petri net coordination only when the system has
 enough resource contention and concurrency to justify them.
@@ -394,6 +475,9 @@ Use these defaults for the first refactor phase:
 * keep the current dashboard mission-state shape initially
 * keep mission logic testable without ROS
 * keep the existing two-robot fixed mission behavior as the regression baseline
+* encode the current transfer-zone constraints as default resource capacities
+* encode the current upstream/downstream routes as default `transportItem` task instances
+* keep robot assignment deterministic in the first scheduler
 * do not introduce a planner in the first refactor step
 * do not introduce Petri net coordination in the first refactor step
 * do not introduce a full BT framework before the component boundaries are clear
