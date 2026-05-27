@@ -192,7 +192,20 @@ tb3_2 -> robot2_home
 
 ## 2.4. Run The Mission Manager
 
-Start this only after both robots are visible in fleet state.
+Start this only after both robots are visible in fleet state. The node is now a
+ROS shell around the refactored task-flow mission runtime:
+
+```text
+MissionManagerNode
+  -> MissionOrchestrator
+  -> TransportTaskScheduler
+  -> TransportTaskRunner
+  -> ExecutionManager
+  -> RmfExecutionAdapter / handling timer
+```
+
+The node publishes RMF movement requests for `MOVE_ROBOT` commands and uses a
+short simulated timer for `HANDLE_ITEM` load/unload commands.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -216,13 +229,49 @@ For more packages:
 Use a fresh `mission_id` for each new run if old task state is still visible in
 the dashboard or RMF logs.
 
-Expected mission route:
+To start manually instead of using `auto_start`, run the node with
+`auto_start:=false` and publish a mission command:
+
+```bash
+ros2 topic pub --once /mission_commands std_msgs/msg/String \
+  "{data: '{\"command\":\"start\",\"mission_id\":\"m1\"}'}"
+```
+
+Current mission model:
 
 ```text
-tb3_1: robot1_home/source area -> source -> transfer
-tb3_2: robot2_home/staging area -> staging -> transfer
-tb3_2: transfer -> destination
+transportItem(P1, source, transfer, tb3_1)
+transportItem(P1, transfer, destination, tb3_2)
 ```
+
+Expected command flow for one package:
+
+```text
+tb3_1 load P1 at source
+tb3_1 move source -> transfer through RMF
+tb3_1 unload P1 into the transfer buffer
+tb3_2 move robot2_home -> transfer through RMF
+tb3_2 load P1 from the transfer buffer
+tb3_2 move transfer -> destination through RMF
+tb3_2 unload P1 at destination
+mission status -> completed
+```
+
+If the transfer resource is occupied when a task needs it, the task runner sends
+the robot to `staging`, marks the task blocked, and retries the transfer
+resource on the next runtime tick.
+
+Monitor the runtime state:
+
+```bash
+ros2 topic echo /mission_state std_msgs/msg/String \
+  --qos-reliability reliable \
+  --qos-durability transient_local
+```
+
+The `mission_state` JSON includes mission status, package locations, robot
+states, resources, transport tasks, execution commands, active RMF task IDs, and
+active handling timers.
 
 # 3. Optional: Web UI Run
 
@@ -397,7 +446,7 @@ ros2 run rmf_demos_tasks dispatch_patrol \
   -st 0
 ```
 
-## 5.4. Mission Manager Tests
+## 5.4. Mission Runtime Checks
 
 ```bash
 cd /home/minhqphan/projects/MACMOI
@@ -405,7 +454,31 @@ source /opt/ros/jazzy/setup.bash
 source rmf_ws/.venv/bin/activate
 source rmf_ws/install/setup.bash
 
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest rmf_ws/src/mrd_mission_manager/test -q
+PYTHONPATH=rmf_ws/src/mrd_mission_manager \
+python3 -m py_compile rmf_ws/src/mrd_mission_manager/mrd_mission_manager/*.py
+```
+
+Run a one-package runtime smoke check without ROS:
+
+```bash
+PYTHONPATH=rmf_ws/src/mrd_mission_manager python3 - <<'PY'
+from mrd_mission_manager.orchestrator import MissionOrchestrator
+
+orch = MissionOrchestrator.create_default("smoke", 1)
+commands = orch.start()
+while commands:
+    commands = orch.complete_command(commands[0].command_id)
+
+print(orch.runtime.status.value)
+print(orch.runtime.world.items["P1"].location)
+PY
+```
+
+Expected output:
+
+```text
+COMPLETED
+destination
 ```
 
 ## 5.5. Debug Fleet Adapter Segfaults

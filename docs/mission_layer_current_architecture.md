@@ -1,12 +1,13 @@
 # Mission Layer Current Architecture
 
-This document describes the current `mrd_mission_manager` architecture after
-the mission-layer refactor. The mission layer now runs on generalized transport
-tasks, runtime world state, resource management, execution commands, and an RMF
+This document is the current source-of-truth for the `mrd_mission_manager`
+architecture. The mission layer now runs on generalized transport tasks,
+runtime world state, resource management, execution commands, and an RMF
 execution adapter.
 
-The old mission-controller path based on `MissionManager`, `rule_evaluator`,
-`TransferController`, `TaskSegment`, and `RmfMissionBridge` has been removed.
+The old mission-controller path based on a mission-specific FSM, rule evaluator,
+transfer controller, task segments, and bridge-level mission semantics has been
+removed from the active runtime.
 
 ---
 
@@ -70,6 +71,24 @@ transportItem(P1, source, transfer, tb3_1)
 transportItem(P1, transfer, destination, tb3_2)
 ```
 
+### Source Map
+
+The active mission runtime is implemented in:
+
+```text
+mission_manager_node.py       ROS node, topics, timers, RMF subscriptions
+orchestrator.py               mission lifecycle and task coordination
+mission_tasks.py              mission/task status and transport task model
+scheduler.py                  deterministic ready-task selection
+task_runner.py                transport task workflow runner
+world.py                      robot/item world state
+world_resource_manager.py     resource acquisition and buffer rules
+resources.py                  generic resource state model
+execution.py                  execution command lifecycle
+rmf_execution_adapter.py      RMF task API adapter for movement commands
+mission_serializer.py         mission_state JSON serialization
+```
+
 ---
 
 ## 2. MissionManagerNode
@@ -85,7 +104,7 @@ It owns:
 * fleet-state fallback completion detection
 * simulated handling timers
 * mission-state publication
-* recent event/action debug history
+* recent command/debug history
 
 It does not own mission policy. It delegates mission behavior to the
 `MissionOrchestrator`.
@@ -673,3 +692,26 @@ place:
 * `RmfExecutionAdapter` can add cancellation/failure handling and richer command
   types.
 * `HANDLE_ITEM` timers can be replaced by real load/unload confirmations.
+
+The current architecture is designed around a clear split:
+
+```text
+Mission policy:
+  MissionOrchestrator, TransportTaskScheduler, TransportTaskRunner
+
+World truth:
+  RuntimeWorld, WorldResourceManager, ResourceState
+
+Execution lifecycle:
+  ExecutionManager, ExecutionCommand
+
+External adapters:
+  MissionManagerNode, RmfExecutionAdapter, handling timers
+
+State output:
+  mission_serializer.py
+```
+
+The important rule is that mission decisions happen in the core runtime, while
+ROS and RMF are adapters around that core. This keeps the mission logic testable
+without running ROS and keeps RMF task IDs out of the task model.

@@ -45,7 +45,7 @@ GET  /missions/{mission_id}
 The backend can either:
 
 ```text
-run the MissionManager in-process
+run the mission runtime in-process
 ```
 
 or:
