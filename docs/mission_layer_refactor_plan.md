@@ -416,7 +416,44 @@ Resource:
 The current mission should be encoded as default task instances and default
 resource settings, not as new hardcoded behavior.
 
-### Step 3: Extract World / Resource Manager
+### Step 3: Create The New Runtime Core
+
+Create the new in-process runtime modules without switching the ROS node first:
+
+```text
+MissionOrchestrator
+RuntimeWorld
+TransportTaskScheduler
+ExecutionManager
+```
+
+The core should create default `transportItem` tasks, own robot/item/resource
+state, select ready tasks, and emit execution commands.
+
+### Step 4: Replace Rule Flow With Task Flow
+
+Drive the current mission through task instances instead of the old
+`MissionManager -> rule_evaluator` path.
+
+The first task flow should run:
+
+```text
+transportItem(P1, source, transfer, tb3_1)
+transportItem(P1, transfer, destination, tb3_2)
+```
+
+using explicit task workflow steps:
+
+```text
+acquire pickup/dropoff resource when needed
+move robot
+load item
+unload item
+release resource
+mark task succeeded
+```
+
+### Step 5: Extract World / Resource Manager
 
 Move transfer-zone ownership and transfer-related rule logic out of the current
 mission/rule path into a dedicated World/Resource Manager.
@@ -424,16 +461,16 @@ mission/rule path into a dedicated World/Resource Manager.
 The first version can still support only the existing single transfer zone. The
 goal is to establish the boundary before adding multiple resources.
 
-### Step 4: Introduce A Scheduler Interface
+### Step 6: Introduce A Scheduler Interface
 
-Wrap the current `rule_evaluator` behavior behind a Scheduler/Dispatcher
-interface that works over task instances and resource state.
+Use a Scheduler/Dispatcher interface that works over task instances and resource
+state.
 
 The first implementation should keep the current deterministic dispatch rules.
 The architectural change is that future task allocation, priorities, and
 planner output have a clear place to plug in.
 
-### Step 5: Introduce Execution Command IDs
+### Step 7: Introduce Execution Command IDs
 
 Move toward generic execution command lifecycle tracking.
 
@@ -441,7 +478,7 @@ Instead of relying on mission-specific `TaskSegment` meaning inside the RMF
 bridge, execution commands should have stable IDs that can be submitted,
 accepted, completed, failed, or cancelled.
 
-### Step 6: Add A Lightweight Execution Layer
+### Step 8: Add A Lightweight Execution Layer
 
 Add a small execution layer that tracks command lifecycle and owns the mapping
 between task workflow steps and execution commands.
@@ -449,7 +486,14 @@ between task workflow steps and execution commands.
 This layer becomes the bridge between scheduler/BT intent and RMF adapter
 execution.
 
-### Step 7: Add BT Execution For One Workflow
+### Step 9: Switch The ROS Node To The New Core
+
+Replace the runtime use of the old `MissionManager` with the new orchestrator,
+execution manager, scheduler, and world model. Mission commands should start or
+control the orchestrator, and RMF/timer completions should complete execution
+commands.
+
+### Step 10: Add BT Execution For One Workflow
 
 Introduce BT execution for one `transportItem` workflow only after the
 world/resource, scheduler, and execution-command boundaries are stable.
@@ -457,7 +501,12 @@ world/resource, scheduler, and execution-command boundaries are stable.
 The first BT should preserve the existing behavior rather than add new mission
 capability.
 
-### Step 8: Add Advanced Coordination Only When Needed
+### Step 11: Remove Legacy Mission Controller Code
+
+After the ROS node runs through the new task flow, remove the old
+`MissionManager`, `rule_evaluator`, and `TransferController` path.
+
+### Step 12: Add Advanced Coordination Only When Needed
 
 Add planners, task allocators, or Petri net coordination only when the system has
 enough resource contention and concurrency to justify them.

@@ -13,6 +13,7 @@ from .mission_state import MissionStatus
 from .mission_tasks import MissionTaskStatus, TransportItemTask
 from .resources import ResourceState, ResourceType
 from .scheduler import TransportTaskScheduler
+from .task_runner import TransportTaskRunner
 from .world import RuntimeWorld, WorldItemState, WorldRobotState
 
 
@@ -34,6 +35,7 @@ class MissionOrchestrator:
         self.runtime = runtime
         self.scheduler = scheduler or TransportTaskScheduler()
         self.execution = execution or ExecutionManager()
+        self.task_runner = TransportTaskRunner(runtime.world, self.execution)
 
     @classmethod
     def create_default(
@@ -94,16 +96,26 @@ class MissionOrchestrator:
             self.runtime.status = MissionStatus.COMPLETED
             return []
 
+        for task in self.runtime.tasks.values():
+            if task.status in (MissionTaskStatus.RUNNING, MissionTaskStatus.BLOCKED):
+                commands = self.task_runner.advance(task)
+                if commands:
+                    return commands
+
         task = self.scheduler.next_ready_task(self.runtime.tasks, self.runtime.world)
-        if task is None or task.robot_id is None:
+        if task is None:
             return []
 
-        self.runtime.world.assign_robot(task.robot_id, task.task_id)
-        task.status = MissionTaskStatus.RUNNING
-        return [
-            self.execution.create_move(
-                task.task_id,
-                task.robot_id,
-                task.pickup,
-            )
-        ]
+        return self.task_runner.start(task)
+
+    def complete_command(self, command_id: str) -> list[ExecutionCommand]:
+        if command_id not in self.execution.commands:
+            return []
+        command = self.execution.commands[command_id]
+        if not self.execution.mark_succeeded(command_id):
+            return []
+        task = self.runtime.tasks.get(command.task_id)
+        if task is None:
+            return []
+        commands = self.task_runner.handle_command_succeeded(task, command)
+        return commands or self.tick()

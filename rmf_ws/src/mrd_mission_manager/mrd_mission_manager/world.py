@@ -56,6 +56,11 @@ class RuntimeWorld:
         robot.status = WorldRobotStatus.IDLE
         robot.active_task_id = None
 
+    def mark_robot_waiting(self, robot_id: str, task_id: str) -> None:
+        robot = self.robots[robot_id]
+        robot.status = WorldRobotStatus.WAITING
+        robot.active_task_id = task_id
+
     def move_robot(self, robot_id: str, location: str) -> None:
         self.robots[robot_id].location = location
 
