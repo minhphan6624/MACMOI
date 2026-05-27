@@ -1,8 +1,5 @@
-from .mission_state import (
-    TransferZoneState,
-    DOWNSTREAM_ROBOT,
-    UPSTREAM_ROBOT
-)
+from .mission_definition import DOWNSTREAM_ROBOT, UPSTREAM_ROBOT
+from .mission_state import TransferZoneState
 
 class TransferController:
     def __init__(

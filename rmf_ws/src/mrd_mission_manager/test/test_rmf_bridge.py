@@ -56,7 +56,7 @@ class TestRmfMissionBridge(unittest.TestCase):
         self.assertEqual(payload["robot"], "tb3_1")
         self.assertEqual(payload["fleet"], "tb3_lab")
         self.assertEqual(payload["request"]["category"], "patrol")
-        self.assertEqual(payload["request"]["description"]["places"], ["wp1", "wp2"])
+        self.assertEqual(payload["request"]["description"]["places"], ["source", "staging"])
         self.assertIn("mission_id=m1", payload["request"]["labels"])
         self.assertIn("package_id=P1", payload["request"]["labels"])
         self.assertIn("segment=source_to_staging", payload["request"]["labels"])

@@ -12,21 +12,33 @@ from .events import (
     RobotBecameIdle,
     UpstreamLegCompleted,
 )
-from .mission_state import DOWNSTREAM_ROBOT, UPSTREAM_ROBOT, TaskSegment
+from .mission_definition import (
+    DESTINATION_WAYPOINT,
+    DOWNSTREAM_HOME_WAYPOINT,
+    DOWNSTREAM_ROBOT,
+    FLEET_NAME,
+    REQUESTER,
+    SOURCE_WAYPOINT,
+    STAGING_WAYPOINT,
+    TRANSFER_WAYPOINT,
+    UPSTREAM_HOME_WAYPOINT,
+    UPSTREAM_ROBOT,
+)
+from .mission_state import TaskSegment
 
 
 @dataclass(frozen=True)
 class MissionBridgeConfig:
-    fleet_name: str = "tb3_lab"
+    fleet_name: str = FLEET_NAME
     upstream_robot: str = UPSTREAM_ROBOT
     downstream_robot: str = DOWNSTREAM_ROBOT
-    source_waypoint: str = "wp1"
-    staging_waypoint: str = "wp2"
-    transfer_waypoint: str = "wp3"
-    destination_waypoint: str = "wp4"
-    upstream_home_waypoint: str = "wp1"
-    downstream_home_waypoint: str = "wp2"
-    requester: str = "mrd_mission_manager"
+    source_waypoint: str = SOURCE_WAYPOINT
+    staging_waypoint: str = STAGING_WAYPOINT
+    transfer_waypoint: str = TRANSFER_WAYPOINT
+    destination_waypoint: str = DESTINATION_WAYPOINT
+    upstream_home_waypoint: str = UPSTREAM_HOME_WAYPOINT
+    downstream_home_waypoint: str = DOWNSTREAM_HOME_WAYPOINT
+    requester: str = REQUESTER
 
 
 @dataclass(frozen=True)

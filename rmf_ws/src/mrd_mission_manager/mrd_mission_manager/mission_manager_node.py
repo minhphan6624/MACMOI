@@ -12,9 +12,13 @@ from std_msgs.msg import String
 
 from .actions import DispatchTask, PositionRobot, SendRobotHome, StartHandlingTimer
 from .events import HandlingTimerCompleted, MissionStarted
+from .mission_definition import (
+    DOWNSTREAM_ROBOT,
+    FLEET_NAME,
+    UPSTREAM_ROBOT,
+)
 from .mission_manager import MissionManager
 from .mission_serializer import action_to_dict, event_to_dict, serialize_mission_state
-from .mission_state import RobotLocation
 from .rmf_bridge import MissionBridgeConfig, RmfMissionBridge
 
 
@@ -25,15 +29,6 @@ class MissionManagerNode(Node):
         self.declare_parameter("mission_id", "m1")
         self.declare_parameter("total_packages", 1)
         self.declare_parameter("auto_start", False)
-        self.declare_parameter("fleet_name", "tb3_lab")
-        self.declare_parameter("upstream_robot", "tb3_1")
-        self.declare_parameter("downstream_robot", "tb3_2")
-        self.declare_parameter("source_waypoint", "wp1")
-        self.declare_parameter("staging_waypoint", "wp2")
-        self.declare_parameter("transfer_waypoint", "wp3")
-        self.declare_parameter("destination_waypoint", "wp4")
-        self.declare_parameter("upstream_home_waypoint", "wp1")
-        self.declare_parameter("downstream_home_waypoint", "wp2")
         self.declare_parameter("task_summaries_topic", "task_summaries")
         self.declare_parameter("fleet_states_topic", "fleet_states")
         self.declare_parameter("mission_state_topic", "mission_state")
@@ -41,18 +36,13 @@ class MissionManagerNode(Node):
 
         mission_id = self.get_parameter("mission_id").value
         total_packages = self.get_parameter("total_packages").value
-        upstream_robot = self.get_parameter("upstream_robot").value
-        downstream_robot = self.get_parameter("downstream_robot").value
-        staging_waypoint = self.get_parameter("staging_waypoint").value
-        downstream_home_waypoint = self.get_parameter("downstream_home_waypoint").value
+        
         self.manager = MissionManager.create(
             mission_id,
             total_packages,
-            upstream_robot=upstream_robot,
-            downstream_robot=downstream_robot,
+            upstream_robot=UPSTREAM_ROBOT,
+            downstream_robot=DOWNSTREAM_ROBOT,
         )
-        if downstream_home_waypoint == staging_waypoint:
-            self.manager.state.robots[downstream_robot].location = RobotLocation.STAGING
 
         qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -97,17 +87,7 @@ class MissionManagerNode(Node):
 
         self.bridge = RmfMissionBridge(
             self.manager,
-            MissionBridgeConfig(
-                fleet_name=self.get_parameter("fleet_name").value,
-                upstream_robot=upstream_robot,
-                downstream_robot=downstream_robot,
-                source_waypoint=self.get_parameter("source_waypoint").value,
-                staging_waypoint=staging_waypoint,
-                transfer_waypoint=self.get_parameter("transfer_waypoint").value,
-                destination_waypoint=self.get_parameter("destination_waypoint").value,
-                upstream_home_waypoint=self.get_parameter("upstream_home_waypoint").value,
-                downstream_home_waypoint=downstream_home_waypoint,
-            ),
+            MissionBridgeConfig(),
             publish_request=self._publish_api_request,
             logger=self.get_logger(),
         )
@@ -150,7 +130,7 @@ class MissionManagerNode(Node):
         self._dispatch_actions(actions)
 
     def _handle_fleet_state(self, msg: FleetState) -> None:
-        if msg.name != self.get_parameter("fleet_name").value:
+        if msg.name != FLEET_NAME:
             return
 
         actions = []

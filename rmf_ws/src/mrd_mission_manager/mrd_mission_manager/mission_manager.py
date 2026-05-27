@@ -12,8 +12,8 @@ from .events import (
     RobotBecameIdle,
     UpstreamLegCompleted,
 )
+from .mission_definition import DOWNSTREAM_ROBOT, UPSTREAM_ROBOT
 from .mission_state import (
-    DOWNSTREAM_ROBOT,
     MissionState,
     MissionStatus,
     PackageRecord,
@@ -23,7 +23,6 @@ from .mission_state import (
     RobotStatus,
     TaskSegment,
     TransferZoneState,
-    UPSTREAM_ROBOT,
 )
 from .rule_evaluator import evaluate_rules
 from .transfer_controller import TransferController

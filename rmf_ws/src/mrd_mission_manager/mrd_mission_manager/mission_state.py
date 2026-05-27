@@ -2,10 +2,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-UPSTREAM_ROBOT = "tb3_1"
-DOWNSTREAM_ROBOT = "tb3_2"
-
-
 ''' Name of the route/task type being dispatched'''
 class TaskSegment(Enum):
     SOURCE_TO_TRANSFER = "source_to_transfer"
