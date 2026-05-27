@@ -9,8 +9,7 @@ from .mission_definition import (
     TRANSFER_WAYPOINT,
     UPSTREAM_ROBOT,
 )
-from .mission_state import MissionStatus
-from .mission_tasks import MissionTaskStatus, TransportItemTask
+from .mission_tasks import MissionStatus, MissionTaskStatus, TransportItemTask
 from .resources import ResourceState, ResourceType
 from .scheduler import TransportTaskScheduler
 from .task_runner import TransportTaskRunner
@@ -87,11 +86,13 @@ class MissionOrchestrator:
     def start(self) -> list[ExecutionCommand]:
         if self.runtime.status == MissionStatus.READY:
             self.runtime.status = MissionStatus.RUNNING
+
         return self.tick()
 
     def tick(self) -> list[ExecutionCommand]:
         if self.runtime.status != MissionStatus.RUNNING:
             return []
+            
         if all(task.status == MissionTaskStatus.SUCCEEDED for task in self.runtime.tasks.values()):
             self.runtime.status = MissionStatus.COMPLETED
             return []

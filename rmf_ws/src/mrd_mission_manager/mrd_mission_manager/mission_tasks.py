@@ -6,6 +6,15 @@ class MissionTaskType(Enum):
     TRANSPORT_ITEM = "transport_item"
 
 
+class MissionStatus(Enum):
+    CREATED = "CREATED"
+    READY = "READY"
+    RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
+    COMPLETED = "COMPLETED"
+    ABORTED = "ABORTED"
+
+
 class MissionTaskStatus(Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
