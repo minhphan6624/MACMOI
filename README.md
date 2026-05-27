@@ -274,7 +274,7 @@ Dispatch a simple patrol task from the central PC:
 
 ```bash
 ros2 run rmf_demos_tasks dispatch_patrol \
-  -p wp1 wp2 wp3 wp4 \
+  -p source staging transfer destination \
   -n 1 \
   -st 0
 ```

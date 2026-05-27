@@ -203,19 +203,19 @@ Move hardcoded values into config:
 robots = {
     "tb3_1": {
         "role": "upstream",
-        "home": "wp1",
+        "home": "robot1_home",
     },
     "tb3_2": {
         "role": "downstream",
-        "home": "wp2",
+        "home": "robot2_home",
     },
 }
 
 zones = {
-    "A": {"type": "source", "waypoint": "wp_source"},
-    "X": {"type": "staging", "waypoint": "wp_staging"},
-    "B": {"type": "transfer", "waypoint": "wp_transfer"},
-    "C": {"type": "destination", "waypoint": "wp_destination"},
+    "A": {"type": "source", "waypoint": "source"},
+    "X": {"type": "staging", "waypoint": "staging"},
+    "B": {"type": "transfer", "waypoint": "transfer"},
+    "C": {"type": "destination", "waypoint": "destination"},
 }
 ```
 

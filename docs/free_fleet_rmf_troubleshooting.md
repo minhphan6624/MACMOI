@@ -211,14 +211,14 @@ Symptom / concern:
 The fleet config referenced:
 
 ```text
-charger: "wp1"
+charger: "robot1_home"
 ```
 
-but `wp1` was not marked as a charger in the building file.
+but `robot1_home` was not marked as a charger in the building file.
 
 Fix:
 
-Mark `wp1` as a charger in the lab `.building.yaml`:
+Mark `robot1_home` as a charger in the lab `.building.yaml`:
 
 ```yaml
 {is_charger: [4, true]}
@@ -345,16 +345,16 @@ Status: coordinate/localization issue to debug methodically.
 Important distinction:
 
 Nav2 AMCL initial pose should be the physical robot's real pose in the Nav2
-map, not automatically the RMF charger waypoint `wp1`.
+map, not automatically the RMF charger waypoint `robot1_home`.
 
-`wp1` is currently the temporary RMF charger waypoint. It corresponds to about
+`robot1_home` is the RMF charger waypoint for `tb3_1`. It corresponds to about
 `[0.5564, 2.0371]` in the Nav2 map frame.
 
 Debug path:
 
 1. Set AMCL/RViz initial pose to the robot's real physical location.
 2. Send direct Nav2 goals at the known waypoint map-frame coordinates.
-3. Dispatch `ros2 run rmf_demos_tasks dispatch_patrol -p wp1 -n 1 -st 0`.
+3. Dispatch `ros2 run rmf_demos_tasks dispatch_patrol -p robot1_home -n 1 -st 0`.
 4. Compare the adapter's `Commanding [...] to navigate to [...]` output against
    the expected Nav2 coordinates.
 5. Only try a 4-point patrol after one waypoint behaves correctly.

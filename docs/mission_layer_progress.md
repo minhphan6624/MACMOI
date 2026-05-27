@@ -241,7 +241,8 @@ TRANSFER_TO_DESTINATION  -> [transfer_waypoint, destination_waypoint]
 HOME                     -> [robot_home_waypoint]
 ```
 
-There is currently one shared `staging_waypoint` parameter. There are separate home waypoint parameters:
+There is currently one shared staging waypoint in the fixed mission definition.
+There are separate home waypoints for the two robots:
 
 ```text
 upstream_home_waypoint
@@ -361,23 +362,23 @@ operator workflow.
 The live mission uses these mission waypoints:
 
 ```text
-wp1 = source
-wp2 = staging
-wp3 = transfer zone
-wp4 = destination
+source = source
+staging = staging
+transfer = transfer zone
+destination = destination
 robot1_home = upstream robot home / charger
 robot2_home = downstream robot home / charger
 ```
 
-Mission manager launch parameters should match those names:
+The mission manager fixed mission definition should match those names:
 
-```bash
--p source_waypoint:=wp1 \
--p staging_waypoint:=wp2 \
--p transfer_waypoint:=wp3 \
--p destination_waypoint:=wp4 \
--p upstream_home_waypoint:=robot1_home \
--p downstream_home_waypoint:=robot2_home
+```text
+source_waypoint = "source"
+staging_waypoint = "staging"
+transfer_waypoint = "transfer"
+destination_waypoint = "destination"
+upstream_home_waypoint = "robot1_home"
+downstream_home_waypoint = "robot2_home"
 ```
 
 The fleet config should use the same home waypoints as charger names:
@@ -400,14 +401,14 @@ debugging old behavior.
 The intended graph shape is:
 
 ```text
-robot1_home <-> wp1
-robot2_home <-> wp2
-wp1 <-> wp3
-wp2 <-> wp3
-wp3 <-> wp4
+robot1_home <-> source
+robot2_home <-> staging
+source <-> transfer
+staging <-> transfer
+transfer <-> destination
 ```
 
-The earlier four-waypoint loop allowed `wp1 -> wp3` to route through `wp4`,
+The earlier four-waypoint loop allowed `source -> transfer` to route through `destination`,
 which made Robot 1 visit the destination before the transfer zone. That graph
 was semantically wrong for this mission even if it was geometrically valid.
 
@@ -520,7 +521,7 @@ started. Two probable triggers were identified and addressed:
 ```text
 1. Zero-length downstream reposition task:
    downstream_home_waypoint == staging_waypoint caused HOME_TO_STAGING to
-   become wp2 -> wp2.
+   become staging -> staging.
 
 2. Stale queued direct requests from the web/API server:
    adapter logs showed queue flush/direct request behavior for old tb3_2 tasks.
@@ -528,7 +529,7 @@ started. Two probable triggers were identified and addressed:
 
 The mission node now marks the downstream robot as already staged when
 `downstream_home_waypoint == staging_waypoint`, avoiding a no-op reposition
-task. The live map was also changed to use separate `robot2_home` and `wp2`.
+task. The live map was also changed to use separate `robot2_home` and `staging`.
 
 When debugging adapter crashes, run without `server_uri` first to avoid stale
 API queue effects. If it still crashes, run the adapter under `gdb` and collect
@@ -846,7 +847,8 @@ The RMF bridge maps `SendRobotHome` to:
 HOME -> [robot_home_waypoint]
 ```
 
-This implies the current runtime expects home waypoints to be configured:
+This implies the current runtime expects home waypoints in the fixed mission
+definition:
 
 ```text
 upstream_home_waypoint
@@ -866,32 +868,29 @@ mission_id = "m1"
 total_packages = 1
 auto_start = false
 
-fleet_name = "tb3_lab"
-upstream_robot = "tb3_1"
-downstream_robot = "tb3_2"
-
-source_waypoint = "wp1"
-staging_waypoint = "wp2"
-transfer_waypoint = "wp3"
-destination_waypoint = "wp4"
-upstream_home_waypoint = "wp1"
-downstream_home_waypoint = "wp2"
-
 task_summaries_topic = "task_summaries"
 fleet_states_topic = "fleet_states"
 mission_state_topic = "mission_state"
 mission_commands_topic = "mission_commands"
 ```
 
-The default home waypoints are legacy defaults. The live AIML lab deployment
-currently passes explicit home waypoints:
+The fixed AIML lab mission definition lives in
+`mrd_mission_manager/mission_definition.py`:
 
 ```text
+fleet_name = "tb3_lab"
+upstream_robot = "tb3_1"
+downstream_robot = "tb3_2"
+
+source_waypoint = "source"
+staging_waypoint = "staging"
+transfer_waypoint = "transfer"
+destination_waypoint = "destination"
 upstream_home_waypoint = "robot1_home"
 downstream_home_waypoint = "robot2_home"
 ```
 
-The current implementation has one shared staging waypoint and one home waypoint setting per robot.
+The current implementation has one shared staging waypoint and one home waypoint per robot.
 
 ---
 

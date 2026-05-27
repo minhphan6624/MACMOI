@@ -86,22 +86,22 @@ Current waypoint meaning:
 ```text
 robot1_home = tb3_1 charger/home
 robot2_home = tb3_2 charger/home
-wp1 = source
-wp2 = staging
-wp3 = transfer
-wp4 = destination
+source = source
+staging = staging
+transfer = transfer
+destination = destination
 ```
 
 Current traffic graph:
 
 ```text
-robot1_home <-> wp1
-robot1_home <-> wp2
-robot2_home <-> wp2
-robot2_home <-> wp3
-wp1 <-> wp3
-wp2 <-> wp3
-wp3 <-> wp4
+robot1_home <-> source
+robot1_home <-> staging
+robot2_home <-> staging
+robot2_home <-> transfer
+source <-> transfer
+staging <-> transfer
+transfer <-> destination
 ```
 
 Only `robot1_home` and `robot2_home` should be marked as chargers.
@@ -204,17 +204,7 @@ ros2 run mrd_mission_manager mission_manager_node \
   --ros-args \
   -p mission_id:=m1 \
   -p total_packages:=3 \
-  -p auto_start:=true \
-  -p fleet_name:=tb3_lab \
-  -p upstream_robot:=tb3_1 \
-  -p downstream_robot:=tb3_2 \
-  -p source_waypoint:=wp1 \
-  -p staging_waypoint:=wp2 \
-  -p transfer_waypoint:=wp3 \
-  -p destination_waypoint:=wp4 \
-  -p upstream_home_waypoint:=robot1_home \
-  -p downstream_home_waypoint:=robot2_home \
-  -p task_summaries_topic:=task_summaries
+  -p auto_start:=true
 ```
 
 For more packages:
@@ -229,9 +219,9 @@ the dashboard or RMF logs.
 Expected mission route:
 
 ```text
-tb3_1: robot1_home/source area -> wp1 -> wp3
-tb3_2: robot2_home/staging area -> wp2 -> wp3
-tb3_2: wp3 -> wp4
+tb3_1: robot1_home/source area -> source -> transfer
+tb3_2: robot2_home/staging area -> staging -> transfer
+tb3_2: transfer -> destination
 ```
 
 # 3. Optional: Web UI Run
@@ -376,10 +366,10 @@ Current estimated Nav2 map-frame coordinates:
 ```text
 robot1_home -> [ 2.1766,  2.1308]
 robot2_home -> [-2.7358,  2.2426]
-wp1         -> [ 2.3845,  0.7899]
-wp2         -> [-0.5594,  2.0784]
-wp3         -> [-0.4699,  0.1098]
-wp4         -> [-3.3064,  0.9062]
+source      -> [ 2.3845,  0.7899]
+staging     -> [-0.5594,  2.0784]
+transfer    -> [-0.4699,  0.1098]
+destination -> [-3.3064,  0.9062]
 ```
 
 These are derived from the previous RMF-to-Nav2 transform. Replace them with
@@ -393,7 +383,7 @@ Run after both robots are visible in `/fleet_states`:
 ros2 run rmf_demos_tasks dispatch_patrol \
   -F tb3_lab \
   -R tb3_1 \
-  -p wp1 wp3 \
+  -p source transfer \
   -n 1 \
   -st 0
 ```
@@ -402,7 +392,7 @@ ros2 run rmf_demos_tasks dispatch_patrol \
 ros2 run rmf_demos_tasks dispatch_patrol \
   -F tb3_lab \
   -R tb3_2 \
-  -p wp2 wp3 \
+  -p staging transfer \
   -n 1 \
   -st 0
 ```

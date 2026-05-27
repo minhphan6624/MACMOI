@@ -78,9 +78,11 @@ Lab drawing: `adapter_ws/src/rmf_asset/maps/aiml-lab.png`
 
 Generated RMF nav graph: `adapter_ws/src/rmf_asset/generated_nav_graphs/1.yaml`
 
-The current RMF graph is intentionally minimal for smoke testing, which includes 4 points  `wp1 <-> wp2 <-> wp3 <-> wp4 <-> wp1 `
+The current RMF graph is intentionally minimal for smoke testing, with mission
+waypoints named `source`, `staging`, `transfer`, and `destination`.
 
-The level name is `LG`. `wp1` is currently marked as a charger waypoint so it can match the temporary robot charger field in the fleet config.
+The level name is `LG`. `robot1_home` and `robot2_home` are marked as charger
+waypoints for the two TurtleBot3 robots.
 
 # 4. Current Fleet Config
 
@@ -92,7 +94,9 @@ Current configured robot: `tb3_2`.
 
 The robot name in the fleet config must match the namespace exposed by the robot's `zenoh-bridge-ros2dds` config.
 
-The config currently treats `wp1` as a temporary charger/home waypoint. This is good enough for smoke testing, but it is not a full docking or charging workflow.
+The config uses `robot1_home` and `robot2_home` as charger/home waypoints. This
+is good enough for smoke testing, but it is not a full docking or charging
+workflow.
 
 Delivery tasks are disabled. Loop / patrol-style motion is the first target.
 
@@ -113,14 +117,14 @@ Important correction: `reference_coordinates.rmf` in the fleet config must use c
 - Created the adapter-side fleet config for the lab TurtleBot3 fleet.
 - Generated an RMF nav graph from the lab `.building.yaml`.
 - Corrected `reference_coordinates` to use generated RMF nav graph coordinates.
-- Marked `wp1` as a charger waypoint for the current temporary charger config.
+- Marked `robot1_home` and `robot2_home` as charger waypoints.
 - Launched RMF common services with the lab building file.
 - Resolved the adapter startup segfault by using a compatible `numpy` version.
 - Added a local `free_fleet_adapter` compatibility patch that treats
   TurtleBot3 battery percentages in the `1..100` range as percent values before
   passing state-of-charge to RMF.
 - Reached the adapter registration milestone: the adapter can add the robot to
-  fleet `tb3_lab` and set the `wp1` charger waypoint.
+  fleet `tb3_lab` and set the configured charger waypoint.
 
 # 7. Current Smoke-Test Definition
 
@@ -144,17 +148,18 @@ modeling.
 
 # 8. Lab Waypoint Correspondence
 
-The generated RMF nav graph uses waypoints `wp1`, `wp2`, `wp3`, and `wp4`.
+The generated RMF nav graph uses waypoints `source`, `staging`, `transfer`, and
+`destination`.
 The current fleet config maps those RMF waypoints to approximately these Nav2
 map-frame coordinates:
 
 ```text
-wp1 -> [ 0.5564,  2.0371]
-wp2 -> [-2.1961,  2.1682]
-wp3 -> [-2.3108,  0.2512]
-wp4 -> [ 0.6056, -0.0110]
+source      -> [ 0.5564,  2.0371]
+staging     -> [-2.1961,  2.1682]
+transfer    -> [-2.3108,  0.2512]
+destination -> [ 0.6056, -0.0110]
 ```
 
 Use these coordinates when comparing a direct Nav2 goal against an RMF patrol
-task. The robot does not need to start physically at `wp1`; AMCL should be given
-the robot's actual pose on the Nav2 map.
+task. The robot does not need to start physically at `source`; AMCL should be
+given the robot's actual pose on the Nav2 map.

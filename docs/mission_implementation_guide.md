@@ -751,7 +751,7 @@ Implemented:
 * `MissionManager.handle_event(event)`
 * `MissionManager.record_dispatch(action, task_id)`
 * `MissionManager.record_position_dispatch(action, task_id)`
-* fixed default robot roles using `tb3_1` as upstream and `tb3_2` as downstream, with constructor/parameter overrides
+* fixed AIML lab mission definition using `tb3_1` as upstream and `tb3_2` as downstream
 * mission/package/robot/transfer state models
 * transfer-zone entry, occupancy, buffer, and staging state helpers
 * event handling for start, pause, resume, abort, upstream/downstream staging arrival, upstream completion, downstream pickup, downstream delivery, handling timer completion, and robot idle

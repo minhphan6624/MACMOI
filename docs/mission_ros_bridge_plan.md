@@ -47,28 +47,33 @@ Implemented package metadata:
 
 ## Configuration
 
-Use ROS parameters with defaults:
+Use ROS parameters for mission runtime values:
 
 ```text
 mission_id = "m1"
 total_packages = 1
 auto_start = false
 
+task_summaries_topic = "task_summaries"
+```
+
+The fixed AIML lab mission definition lives in code:
+
+```text
 fleet_name = "tb3_lab"
 upstream_robot = "tb3_1"
 downstream_robot = "tb3_2"
 
-source_waypoint = "wp1"
-staging_waypoint = "wp2"
-transfer_waypoint = "wp3"
-destination_waypoint = "wp4"
+source_waypoint = "source"
+staging_waypoint = "staging"
+transfer_waypoint = "transfer"
+destination_waypoint = "destination"
 
-upstream_home_waypoint = "wp1"
-downstream_home_waypoint = "wp2"
-task_summaries_topic = "task_summaries"
+upstream_home_waypoint = "robot1_home"
+downstream_home_waypoint = "robot2_home"
 ```
 
-No building map update is required for this step. These parameters map mission concepts to existing RMF waypoints.
+No building map update is required for this step. These constants map mission concepts to existing RMF waypoints.
 
 ---
 
@@ -87,7 +92,7 @@ Payload shape:
     "category": "patrol",
     "fleet_name": "tb3_lab",
     "description": {
-      "places": ["wp1", "wp2"],
+      "places": ["source", "staging"],
       "rounds": 1
     },
     "labels": [
@@ -172,7 +177,7 @@ This prevents duplicate RMF task updates from re-emitting the same mission event
 
 Implemented unit tests that do not require a live RMF system:
 
-* `DispatchTask(SOURCE_TO_STAGING)` creates a `robot_task_request` with `places=["wp1", "wp2"]`.
+* `DispatchTask(SOURCE_TO_STAGING)` creates a `robot_task_request` with `places=["source", "staging"]`.
 * successful RMF response records task context
 * failed RMF response does not record dispatch
 * completed task IDs map to the correct mission events
@@ -189,7 +194,7 @@ PYTHONPATH=rmf_ws/src/mrd_mission_manager python3 -m unittest discover -s rmf_ws
 
 ## Assumptions
 
-* Use existing RMF waypoints `wp1`, `wp2`, `wp3`, and `wp4`.
+* Use existing RMF waypoints `source`, `staging`, `transfer`, and `destination`.
 * Do not update the building map for this step.
 * Use `robot_task_request`, not `dispatch_task_request`.
 * Use RMF patrol tasks, not native RMF delivery tasks.
