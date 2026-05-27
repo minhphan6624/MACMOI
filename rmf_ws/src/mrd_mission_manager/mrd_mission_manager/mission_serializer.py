@@ -107,6 +107,12 @@ def serialize_runtime_mission_state(orchestrator, adapter=None, node_debug=None)
         "mission_tasks": _json_value(runtime.tasks),
         "resources": _json_value(world.resources),
         "execution_commands": _json_value(orchestrator.execution.commands),
+        "operator": {
+            "active_command_count": len(active_command_ids),
+            "blocked_task_count": sum(
+                1 for task in runtime.tasks.values() if task.waiting_resource_id is not None
+            ),
+        },
         "active_task_ids": active_command_ids,
         "node_online": True,
         "last_update_time": time(),
