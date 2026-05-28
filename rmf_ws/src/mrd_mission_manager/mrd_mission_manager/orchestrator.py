@@ -7,6 +7,7 @@ from .mission_definition import (
     DOWNSTREAM_ROBOT,
     SOURCE_WAYPOINT,
     TRANSFER_WAYPOINT,
+    UPSTREAM_HOME_WAYPOINT,
     UPSTREAM_ROBOT,
 )
 from .mission_tasks import MissionStatus, MissionTaskStatus, TransportItemTask
@@ -68,7 +69,7 @@ class MissionOrchestrator:
 
         world = RuntimeWorld(
             robots={
-                upstream_robot: WorldRobotState(upstream_robot, SOURCE_WAYPOINT),
+                upstream_robot: WorldRobotState(upstream_robot, UPSTREAM_HOME_WAYPOINT),
                 downstream_robot: WorldRobotState(downstream_robot, DOWNSTREAM_HOME_WAYPOINT),
             },
             items=items,

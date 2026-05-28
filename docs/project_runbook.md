@@ -247,6 +247,7 @@ transportItem(P1, transfer, destination, tb3_2)
 Expected command flow for one package:
 
 ```text
+tb3_1 move robot1_home -> source through RMF
 tb3_1 load P1 at source
 tb3_1 move source -> transfer through RMF
 tb3_1 unload P1 into the transfer buffer

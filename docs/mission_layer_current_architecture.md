@@ -583,7 +583,7 @@ Initial state:
 ```text
 mission status = READY
 P1.location = source
-tb3_1.location = source
+tb3_1.location = robot1_home
 tb3_2.location = robot2_home
 transfer.robot_occupancy = []
 transfer.package_occupancy = []
@@ -605,7 +605,13 @@ The scheduler selects:
 P1:source_to_transfer
 ```
 
-The task runner starts the task. Since `tb3_1` is already at `source`, it emits:
+The task runner starts the task. Since `tb3_1` starts at `robot1_home`, it emits:
+
+```text
+MOVE_ROBOT(tb3_1, source)
+```
+
+After RMF reports that movement complete, the task runner emits:
 
 ```text
 HANDLE_ITEM(load P1 with tb3_1)
