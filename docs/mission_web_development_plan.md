@@ -45,13 +45,13 @@ GET  /missions/{mission_id}
 The backend can either:
 
 ```text
-run the MissionManager in-process
+run the mission runtime in-process
 ```
 
 or:
 
 ```text
-communicate with the ROS mission_manager_node
+communicate with the ROS mission manager node
 ```
 
 For the current project, prefer keeping one mission authority. If the ROS node owns the live mission, the API backend should observe/control that node rather than creating a separate mission manager instance.

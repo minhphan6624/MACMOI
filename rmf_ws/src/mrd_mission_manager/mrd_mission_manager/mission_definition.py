@@ -1,0 +1,14 @@
+FLEET_NAME = "tb3_lab"
+
+UPSTREAM_ROBOT = "tb3_1"
+DOWNSTREAM_ROBOT = "tb3_2"
+
+SOURCE_WAYPOINT = "source"
+STAGING_WAYPOINT = "staging"
+TRANSFER_WAYPOINT = "transfer"
+DESTINATION_WAYPOINT = "destination"
+
+UPSTREAM_HOME_WAYPOINT = "robot1_home"
+DOWNSTREAM_HOME_WAYPOINT = "robot2_home"
+
+REQUESTER = "mrd_mission_manager"

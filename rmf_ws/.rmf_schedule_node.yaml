@@ -11,8 +11,8 @@
         type: Circle
         index: 1
       shape_context:
-        - 0.14999999999999999
-        - 0.29999999999999999
+        - 0.22
+        - 0.5
 - operation: Add
   participant_description:
     name: tb3_2
@@ -26,5 +26,5 @@
         type: Circle
         index: 1
       shape_context:
-        - 0.14999999999999999
-        - 0.29999999999999999
+        - 0.22
+        - 0.5

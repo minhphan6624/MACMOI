@@ -10,12 +10,15 @@ from rmf_fleet_msgs.msg import FleetState
 from rmf_task_msgs.msg import ApiRequest, ApiResponse, TaskSummary
 from std_msgs.msg import String
 
-from .actions import DispatchTask, PositionRobot, SendRobotHome, StartHandlingTimer
-from .events import HandlingTimerCompleted, MissionStarted
-from .mission_manager import MissionManager
-from .mission_serializer import action_to_dict, event_to_dict, serialize_mission_state
-from .mission_state import RobotLocation
-from .rmf_bridge import MissionBridgeConfig, RmfMissionBridge
+from .execution import ExecutionCommand, ExecutionCommandType
+from .mission_definition import (
+    DOWNSTREAM_ROBOT,
+    FLEET_NAME,
+    UPSTREAM_ROBOT,
+)
+from .mission_serializer import action_to_dict, event_to_dict, serialize_runtime_mission_state
+from .orchestrator import MissionOrchestrator
+from .rmf_execution_adapter import RmfExecutionAdapter, RmfExecutionAdapterConfig
 
 
 class MissionManagerNode(Node):
@@ -25,15 +28,6 @@ class MissionManagerNode(Node):
         self.declare_parameter("mission_id", "m1")
         self.declare_parameter("total_packages", 1)
         self.declare_parameter("auto_start", False)
-        self.declare_parameter("fleet_name", "tb3_lab")
-        self.declare_parameter("upstream_robot", "tb3_1")
-        self.declare_parameter("downstream_robot", "tb3_2")
-        self.declare_parameter("source_waypoint", "wp1")
-        self.declare_parameter("staging_waypoint", "wp2")
-        self.declare_parameter("transfer_waypoint", "wp3")
-        self.declare_parameter("destination_waypoint", "wp4")
-        self.declare_parameter("upstream_home_waypoint", "wp1")
-        self.declare_parameter("downstream_home_waypoint", "wp2")
         self.declare_parameter("task_summaries_topic", "task_summaries")
         self.declare_parameter("fleet_states_topic", "fleet_states")
         self.declare_parameter("mission_state_topic", "mission_state")
@@ -41,18 +35,13 @@ class MissionManagerNode(Node):
 
         mission_id = self.get_parameter("mission_id").value
         total_packages = self.get_parameter("total_packages").value
-        upstream_robot = self.get_parameter("upstream_robot").value
-        downstream_robot = self.get_parameter("downstream_robot").value
-        staging_waypoint = self.get_parameter("staging_waypoint").value
-        downstream_home_waypoint = self.get_parameter("downstream_home_waypoint").value
-        self.manager = MissionManager.create(
+
+        self.orchestrator = MissionOrchestrator.create_default(
             mission_id,
             total_packages,
-            upstream_robot=upstream_robot,
-            downstream_robot=downstream_robot,
+            upstream_robot=UPSTREAM_ROBOT,
+            downstream_robot=DOWNSTREAM_ROBOT,
         )
-        if downstream_home_waypoint == staging_waypoint:
-            self.manager.state.robots[downstream_robot].location = RobotLocation.STAGING
 
         qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
@@ -95,19 +84,8 @@ class MissionManagerNode(Node):
             10,
         )
 
-        self.bridge = RmfMissionBridge(
-            self.manager,
-            MissionBridgeConfig(
-                fleet_name=self.get_parameter("fleet_name").value,
-                upstream_robot=upstream_robot,
-                downstream_robot=downstream_robot,
-                source_waypoint=self.get_parameter("source_waypoint").value,
-                staging_waypoint=staging_waypoint,
-                transfer_waypoint=self.get_parameter("transfer_waypoint").value,
-                destination_waypoint=self.get_parameter("destination_waypoint").value,
-                upstream_home_waypoint=self.get_parameter("upstream_home_waypoint").value,
-                downstream_home_waypoint=downstream_home_waypoint,
-            ),
+        self.rmf_adapter = RmfExecutionAdapter(
+            RmfExecutionAdapterConfig(),
             publish_request=self._publish_api_request,
             logger=self.get_logger(),
         )
@@ -119,7 +97,8 @@ class MissionManagerNode(Node):
         self.last_action = None
 
         if self.get_parameter("auto_start").value:
-            self._handle_event(MissionStarted(mission_id))
+            self._record_event({"command": "auto_start", "mission_id": mission_id})
+            self._dispatch_commands(self.orchestrator.start())
         else:
             self._publish_mission_state()
 
@@ -128,53 +107,69 @@ class MissionManagerNode(Node):
         msg.request_id = request_id
         msg.json_msg = payload
         self.api_request_pub.publish(msg)
-        self.get_logger().info(f"Published mission task request {request_id}")
+        self.get_logger().info(f"Published mission command request {request_id}")
 
     def _handle_api_response(self, msg: ApiResponse) -> None:
-        task_id = self.bridge.handle_api_response(msg)
-        if task_id is not None:
-            self.get_logger().info(f"Mission task accepted: {task_id}")
+        command_id = self.rmf_adapter.handle_api_response(msg)
+        if command_id is not None:
+            self.orchestrator.execution.mark_running(command_id)
+            self.get_logger().info(f"Mission command accepted: {command_id}")
         self._publish_mission_state()
 
     def _handle_task_summaries(self, msg) -> None:
-        actions = []
+        commands = []
         task_states = getattr(msg, "tasks", [msg])
         for task_state in task_states:
             if task_state.state != task_state.STATE_COMPLETED:
                 continue
-            event = self.bridge.event_from_completed_task(task_state.task_id)
-            if event is None:
+            command_id = self.rmf_adapter.command_from_completed_task(task_state.task_id)
+            if command_id is None:
                 continue
-            self._record_event(event)
-            actions.extend(self.manager.handle_event(event))
-        self._dispatch_actions(actions)
+            self._record_event(
+                {
+                    "type": "ExecutionCommandCompleted",
+                    "command_id": command_id,
+                    "rmf_task_id": task_state.task_id,
+                }
+            )
+            commands.extend(self.orchestrator.complete_command(command_id))
+        self._dispatch_commands(commands)
 
     def _handle_fleet_state(self, msg: FleetState) -> None:
-        if msg.name != self.get_parameter("fleet_name").value:
+        if msg.name != FLEET_NAME:
             return
 
-        actions = []
+        commands = []
         fleet_robots = {robot.name: robot for robot in msg.robots}
-        for mission_robot in self.manager.state.robots.values():
-            active_task_id = mission_robot.active_task_id
-            if active_task_id is None:
+        for rmf_task_id, command_id in list(
+            self.rmf_adapter.command_context_by_rmf_task_id.items()
+        ):
+            command = self.orchestrator.execution.commands.get(command_id)
+            if command is None:
                 continue
 
-            fleet_robot = fleet_robots.get(mission_robot.robot_id)
-            if fleet_robot is None or fleet_robot.task_id == active_task_id:
+            fleet_robot = fleet_robots.get(command.robot_id)
+            if fleet_robot is None or fleet_robot.task_id == rmf_task_id:
                 continue
 
             mode = fleet_robot.mode
             if mode.mode == mode.MODE_MOVING:
                 continue
 
-            event = self.bridge.event_from_completed_task(active_task_id)
-            if event is None:
+            completed_command_id = self.rmf_adapter.command_from_completed_task(rmf_task_id)
+            if completed_command_id is None:
                 continue
-            self._record_event(event)
-            actions.extend(self.manager.handle_event(event))
+            self._record_event(
+                {
+                    "type": "ExecutionCommandCompleted",
+                    "command_id": completed_command_id,
+                    "rmf_task_id": rmf_task_id,
+                    "source": "fleet_state",
+                }
+            )
+            commands.extend(self.orchestrator.complete_command(completed_command_id))
 
-        self._dispatch_actions(actions)
+        self._dispatch_commands(commands)
 
     def _handle_mission_command(self, msg: String) -> None:
         try:
@@ -183,55 +178,56 @@ class MissionManagerNode(Node):
             self.get_logger().warning(f"Invalid mission command JSON: {msg.data}")
             return
 
-        if command.get("mission_id") != self.manager.state.mission_id:
+        if command.get("mission_id") != self.orchestrator.runtime.mission_id:
             return
 
         if command.get("command") == "start":
-            self._handle_event(MissionStarted(self.manager.state.mission_id))
+            self._record_event(command)
+            self._dispatch_commands(self.orchestrator.start())
             return
 
         self.get_logger().warning(f"Unsupported mission command: {command}")
 
-    def _dispatch_actions(self, actions) -> None:
-        for action in actions:
-            self._record_action(action)
-            if isinstance(action, (DispatchTask, PositionRobot, SendRobotHome)):
-                self.bridge.submit_action(action)
-            elif isinstance(action, StartHandlingTimer):
-                self._start_handling_timer(action)
+    def _dispatch_commands(self, commands: list[ExecutionCommand]) -> None:
+        for command in commands:
+            self._record_action(command)
+            if command.command_type == ExecutionCommandType.MOVE_ROBOT:
+                self.rmf_adapter.submit_command(command, self.orchestrator.runtime.world)
+                self.orchestrator.execution.mark_submitted(command.command_id)
+            elif command.command_type == ExecutionCommandType.HANDLE_ITEM:
+                self._start_handling_timer(command)
             else:
-                self.get_logger().info(f"Mission action: {action}")
+                self.get_logger().warning(f"Unsupported execution command: {command}")
         self._publish_mission_state()
 
-    def _start_handling_timer(self, action: StartHandlingTimer) -> None:
+    def _start_handling_timer(self, command: ExecutionCommand) -> None:
+        seconds = 5.0
         timer_ref = {}
         timer_info = {
-            "robot_id": action.robot_id,
-            "package_id": action.package_id,
-            "handling_type": action.handling_type,
-            "seconds": action.seconds,
+            "command_id": command.command_id,
+            "robot_id": command.robot_id,
+            "item_id": command.item_id,
+            "handling_type": command.handling_type,
+            "seconds": seconds,
         }
         self.active_handling_timers.append(timer_info)
+        self.orchestrator.execution.mark_running(command.command_id)
 
         def on_timer():
             timer_ref["timer"].cancel()
             if timer_info in self.active_handling_timers:
                 self.active_handling_timers.remove(timer_info)
-            self._handle_event(
-                HandlingTimerCompleted(
-                    self.manager.state.mission_id,
-                    action.robot_id,
-                    action.package_id,
-                    action.handling_type,
-                )
+            self._record_event(
+                {
+                    "type": "ExecutionCommandCompleted",
+                    "command_id": command.command_id,
+                    "source": "handling_timer",
+                }
             )
+            self._dispatch_commands(self.orchestrator.complete_command(command.command_id))
 
-        timer_ref["timer"] = self.create_timer(action.seconds, on_timer)
+        timer_ref["timer"] = self.create_timer(seconds, on_timer)
         self.handling_timers.append(timer_ref["timer"])
-
-    def _handle_event(self, event) -> None:
-        self._record_event(event)
-        self._dispatch_actions(self.manager.handle_event(event))
 
     def _record_event(self, event) -> None:
         event_dict = event_to_dict(event)
@@ -248,9 +244,9 @@ class MissionManagerNode(Node):
     def _publish_mission_state(self) -> None:
         msg = String()
         msg.data = json.dumps(
-            serialize_mission_state(
-                self.manager,
-                self.bridge,
+            serialize_runtime_mission_state(
+                self.orchestrator,
+                self.rmf_adapter,
                 {
                     "last_event": self.last_event,
                     "last_action": self.last_action,

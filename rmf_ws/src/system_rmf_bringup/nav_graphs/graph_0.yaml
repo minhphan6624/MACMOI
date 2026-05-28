@@ -30,14 +30,14 @@ levels:
     vertices:
     - - 13.955676469250713
       - -3.9134305145024273
-      - {is_charger: true, name: wp1}
+      - {is_charger: true, name: source}
     - - 11.238941708114272
       - -3.7840339923643755
-      - {is_charger: true, name: wp2}
+      - {is_charger: true, name: staging}
     - - 11.125732088821865
       - -5.676075663703339
-      - {name: wp3}
+      - {name: transfer}
     - - 14.004187827474095
       - -5.934819357665889
-      - {name: wp4}
+      - {name: destination}
 lifts: {}

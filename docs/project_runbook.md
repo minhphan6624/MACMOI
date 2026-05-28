@@ -86,22 +86,22 @@ Current waypoint meaning:
 ```text
 robot1_home = tb3_1 charger/home
 robot2_home = tb3_2 charger/home
-wp1 = source
-wp2 = staging
-wp3 = transfer
-wp4 = destination
+source = source
+staging = staging
+transfer = transfer
+destination = destination
 ```
 
 Current traffic graph:
 
 ```text
-robot1_home <-> wp1
-robot1_home <-> wp2
-robot2_home <-> wp2
-robot2_home <-> wp3
-wp1 <-> wp3
-wp2 <-> wp3
-wp3 <-> wp4
+robot1_home <-> source
+robot1_home <-> staging
+robot2_home <-> staging
+robot2_home <-> transfer
+source <-> transfer
+staging <-> transfer
+transfer <-> destination
 ```
 
 Only `robot1_home` and `robot2_home` should be marked as chargers.
@@ -192,7 +192,20 @@ tb3_2 -> robot2_home
 
 ## 2.4. Run The Mission Manager
 
-Start this only after both robots are visible in fleet state.
+Start this only after both robots are visible in fleet state. The node is now a
+ROS shell around the refactored task-flow mission runtime:
+
+```text
+MissionManagerNode
+  -> MissionOrchestrator
+  -> TransportTaskScheduler
+  -> TransportTaskRunner
+  -> ExecutionManager
+  -> RmfExecutionAdapter / handling timer
+```
+
+The node publishes RMF movement requests for `MOVE_ROBOT` commands and uses a
+short simulated timer for `HANDLE_ITEM` load/unload commands.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -204,17 +217,7 @@ ros2 run mrd_mission_manager mission_manager_node \
   --ros-args \
   -p mission_id:=m1 \
   -p total_packages:=3 \
-  -p auto_start:=true \
-  -p fleet_name:=tb3_lab \
-  -p upstream_robot:=tb3_1 \
-  -p downstream_robot:=tb3_2 \
-  -p source_waypoint:=wp1 \
-  -p staging_waypoint:=wp2 \
-  -p transfer_waypoint:=wp3 \
-  -p destination_waypoint:=wp4 \
-  -p upstream_home_waypoint:=robot1_home \
-  -p downstream_home_waypoint:=robot2_home \
-  -p task_summaries_topic:=task_summaries
+  -p auto_start:=true
 ```
 
 For more packages:
@@ -226,13 +229,50 @@ For more packages:
 Use a fresh `mission_id` for each new run if old task state is still visible in
 the dashboard or RMF logs.
 
-Expected mission route:
+To start manually instead of using `auto_start`, run the node with
+`auto_start:=false` and publish a mission command:
+
+```bash
+ros2 topic pub --once /mission_commands std_msgs/msg/String \
+  "{data: '{\"command\":\"start\",\"mission_id\":\"m1\"}'}"
+```
+
+Current mission model:
 
 ```text
-tb3_1: robot1_home/source area -> wp1 -> wp3
-tb3_2: robot2_home/staging area -> wp2 -> wp3
-tb3_2: wp3 -> wp4
+transportItem(P1, source, transfer, tb3_1)
+transportItem(P1, transfer, destination, tb3_2)
 ```
+
+Expected command flow for one package:
+
+```text
+tb3_1 move robot1_home -> source through RMF
+tb3_1 load P1 at source
+tb3_1 move source -> transfer through RMF
+tb3_1 unload P1 into the transfer buffer
+tb3_2 move robot2_home -> transfer through RMF
+tb3_2 load P1 from the transfer buffer
+tb3_2 move transfer -> destination through RMF
+tb3_2 unload P1 at destination
+mission status -> completed
+```
+
+If the transfer resource is occupied when a task needs it, the task runner sends
+the robot to `staging`, marks the task blocked, and retries the transfer
+resource on the next runtime tick.
+
+Monitor the runtime state:
+
+```bash
+ros2 topic echo /mission_state std_msgs/msg/String \
+  --qos-reliability reliable \
+  --qos-durability transient_local
+```
+
+The `mission_state` JSON includes mission status, package locations, robot
+states, resources, transport tasks, execution commands, active RMF task IDs, and
+active handling timers.
 
 # 3. Optional: Web UI Run
 
@@ -376,10 +416,10 @@ Current estimated Nav2 map-frame coordinates:
 ```text
 robot1_home -> [ 2.1766,  2.1308]
 robot2_home -> [-2.7358,  2.2426]
-wp1         -> [ 2.3845,  0.7899]
-wp2         -> [-0.5594,  2.0784]
-wp3         -> [-0.4699,  0.1098]
-wp4         -> [-3.3064,  0.9062]
+source      -> [ 2.3845,  0.7899]
+staging     -> [-0.5594,  2.0784]
+transfer    -> [-0.4699,  0.1098]
+destination -> [-3.3064,  0.9062]
 ```
 
 These are derived from the previous RMF-to-Nav2 transform. Replace them with
@@ -393,7 +433,7 @@ Run after both robots are visible in `/fleet_states`:
 ros2 run rmf_demos_tasks dispatch_patrol \
   -F tb3_lab \
   -R tb3_1 \
-  -p wp1 wp3 \
+  -p source transfer \
   -n 1 \
   -st 0
 ```
@@ -402,12 +442,12 @@ ros2 run rmf_demos_tasks dispatch_patrol \
 ros2 run rmf_demos_tasks dispatch_patrol \
   -F tb3_lab \
   -R tb3_2 \
-  -p wp2 wp3 \
+  -p staging transfer \
   -n 1 \
   -st 0
 ```
 
-## 5.4. Mission Manager Tests
+## 5.4. Mission Runtime Checks
 
 ```bash
 cd /home/minhqphan/projects/MACMOI
@@ -415,7 +455,31 @@ source /opt/ros/jazzy/setup.bash
 source rmf_ws/.venv/bin/activate
 source rmf_ws/install/setup.bash
 
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest rmf_ws/src/mrd_mission_manager/test -q
+PYTHONPATH=rmf_ws/src/mrd_mission_manager \
+python3 -m py_compile rmf_ws/src/mrd_mission_manager/mrd_mission_manager/*.py
+```
+
+Run a one-package runtime smoke check without ROS:
+
+```bash
+PYTHONPATH=rmf_ws/src/mrd_mission_manager python3 - <<'PY'
+from mrd_mission_manager.orchestrator import MissionOrchestrator
+
+orch = MissionOrchestrator.create_default("smoke", 1)
+commands = orch.start()
+while commands:
+    commands = orch.complete_command(commands[0].command_id)
+
+print(orch.runtime.status.value)
+print(orch.runtime.world.items["P1"].location)
+PY
+```
+
+Expected output:
+
+```text
+COMPLETED
+destination
 ```
 
 ## 5.5. Debug Fleet Adapter Segfaults
