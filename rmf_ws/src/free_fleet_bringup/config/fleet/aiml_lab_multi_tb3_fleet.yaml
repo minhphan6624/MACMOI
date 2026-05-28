@@ -1,8 +1,8 @@
 rmf_fleet:
   name: "tb3_lab"
   limits:
-    linear: [0.3, 3.0]
-    angular: [1.0, 3.2]
+    linear: [0.24, 0.5]
+    angular: [0.8, 1.5]
   profile:
     footprint: 0.22
     vicinity: 0.5
