@@ -4,8 +4,8 @@ rmf_fleet:
     linear: [0.3, 3.0]
     angular: [1.0, 3.2]
   profile:
-    footprint: 0.15
-    vicinity: 0.3
+    footprint: 0.22
+    vicinity: 0.5
   reversible: true
   battery_system:
     voltage: 12.0
@@ -26,12 +26,12 @@ rmf_fleet:
   task_capabilities:
     loop: true
     delivery: false
-  finishing_request: "nothing"
+  finishing_request: "charge"
   responsive_wait: true
   robots:
     tb3_1:
       charger: "robot1_home"
-      responsive_wait: false
+      responsive_wait: true
       navigation_stack: 2
       init_timeout_sec: 30
       initial_map: "LG"
