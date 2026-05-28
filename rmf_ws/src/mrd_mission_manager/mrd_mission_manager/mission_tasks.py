@@ -51,3 +51,4 @@ class TransportItemTask:
     active_command_id: str | None = None
     waiting_resource_id: str | None = None
     waiting_purpose: str | None = None
+    bt_blackboard: dict = field(default_factory=dict)

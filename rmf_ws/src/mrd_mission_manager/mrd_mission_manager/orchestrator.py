@@ -13,7 +13,7 @@ from .mission_definition import (
 from .mission_tasks import MissionStatus, MissionTaskStatus, TransportItemTask
 from .resources import ResourceState, ResourceType
 from .scheduler import TransportTaskScheduler
-from .task_runner import TransportTaskRunner
+from .transport_bt_runner import TransportTaskBtRunner
 from .world import RuntimeWorld, WorldItemState, WorldRobotState
 
 
@@ -35,7 +35,7 @@ class MissionOrchestrator:
         self.runtime = runtime
         self.scheduler = scheduler or TransportTaskScheduler()
         self.execution = execution or ExecutionManager()
-        self.task_runner = TransportTaskRunner(runtime.world, self.execution)
+        self.task_runner = TransportTaskBtRunner(runtime.world, self.execution)
 
     @classmethod
     def create_default(
