@@ -182,12 +182,12 @@ class HandleItem(BtNode):
 
 class VacateDropoffIfNeeded(BtNode):
     def __init__(self):
-        self.move_to_staging = MoveTo(STAGING_WAYPOINT, TransportTaskPhase.MOVE_TO_STAGING)
+        self.move_to_pickup_side = MoveTo("pickup", TransportTaskPhase.MOVE_TO_PICKUP)
 
     def tick(self, ctx: TransportTaskContext) -> BtResult:
         if ctx.task.dropoff != TRANSFER_WAYPOINT:
             return BtResult(BtStatus.SUCCESS)
-        return self.move_to_staging.tick(ctx)
+        return self.move_to_pickup_side.tick(ctx)
 
 
 class ReleasePickupItemIfManaged(BtNode):
