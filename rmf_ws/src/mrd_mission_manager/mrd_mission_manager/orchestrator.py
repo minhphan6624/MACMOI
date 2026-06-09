@@ -6,6 +6,7 @@ from .mission_definition import (
     DOWNSTREAM_HOME_WAYPOINT,
     DOWNSTREAM_ROBOT,
     SOURCE_WAYPOINT,
+    STAGING_WAYPOINT,
     TRANSFER_WAYPOINT,
     UPSTREAM_HOME_WAYPOINT,
     UPSTREAM_ROBOT,
@@ -79,6 +80,7 @@ class MissionOrchestrator:
                     resource_type=ResourceType.TRANSFER_ZONE,
                     robot_capacity=1,
                     package_capacity=1,
+                    wait_waypoint=STAGING_WAYPOINT,
                 )
             },
         )
@@ -102,7 +104,7 @@ class MissionOrchestrator:
             if task.status in (MissionTaskStatus.RUNNING, MissionTaskStatus.BLOCKED):
                 commands = self.task_runner.advance(task)
                 if commands:
-                    return commands
+                    return self._with_next_ready_task(commands)
 
         task = self.scheduler.next_ready_task(self.runtime.tasks, self.runtime.world)
         if task is None:
@@ -120,4 +122,10 @@ class MissionOrchestrator:
         if task is None:
             return []
         commands = self.task_runner.handle_command_succeeded(task, command)
-        return commands or self.tick()
+        return self._with_next_ready_task(commands) if commands else self.tick()
+
+    def _with_next_ready_task(self, commands: list[ExecutionCommand]) -> list[ExecutionCommand]:
+        task = self.scheduler.next_ready_task(self.runtime.tasks, self.runtime.world)
+        if task is None:
+            return commands
+        return [*commands, *self.task_runner.start(task)]
