@@ -1,7 +1,8 @@
 from .behavior_tree import BtNode, BtResult, BtStatus, MemorySequence, TransportTaskContext
 from .execution import ExecutionCommand, ExecutionCommandType, ExecutionManager
-from .mission_definition import STAGING_WAYPOINT, TRANSFER_WAYPOINT
+from .mission_definition import TRANSFER_WAYPOINT
 from .mission_tasks import MissionTaskStatus, TransportItemTask, TransportTaskPhase
+from .resources import ResourceAccessStatus
 from .world import RuntimeWorld, WorldRobotStatus
 
 
@@ -13,11 +14,11 @@ class TransportTaskBtRunner:
             "transport_item",
             [
                 AssignRobot(),
-                AcquireResourceIfManaged("pickup"),
+                RequestResourceAccess("pickup"),
                 MoveTo("pickup", TransportTaskPhase.MOVE_TO_PICKUP),
                 HandleItem("load", TransportTaskPhase.LOAD_ITEM),
                 ReleasePickupItemIfManaged(),
-                AcquireDropoffOrStage(),
+                RequestResourceAccess("dropoff"),
                 MoveTo("dropoff", TransportTaskPhase.MOVE_TO_DROPOFF),
                 ReleaseResourceOccupancyIfManaged("pickup"),
                 HandleItem("unload", TransportTaskPhase.UNLOAD_ITEM),
@@ -74,7 +75,7 @@ class AssignRobot(BtNode):
         return BtResult(BtStatus.SUCCESS)
 
 
-class AcquireResourceIfManaged(BtNode):
+class RequestResourceAccess(BtNode):
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
 
@@ -88,45 +89,56 @@ class AcquireResourceIfManaged(BtNode):
             return BtResult(BtStatus.SUCCESS)
 
         purpose = self.endpoint
-        phase = (
-            TransportTaskPhase.ACQUIRE_PICKUP
-            if self.endpoint == "pickup"
-            else TransportTaskPhase.ACQUIRE_DROPOFF
+        task.phase = self._acquire_phase()
+        decision = ctx.world.resources_manager.request_access(
+            resource_id,
+            task.robot_id,
+            purpose,
+            task.item_id,
         )
-        task.phase = phase
-        if not ctx.world.can_acquire(resource_id, task.robot_id, purpose, task.item_id):
-            return BtResult(BtStatus.FAILURE)
+        if decision.status == ResourceAccessStatus.WAIT:
+            return self._wait_at_resource_waypoint(ctx, decision.target)
+        if decision.status != ResourceAccessStatus.GRANTED:
+            task.status = MissionTaskStatus.BLOCKED
+            task.waiting_resource_id = resource_id
+            task.waiting_purpose = purpose
+            ctx.world.mark_robot_waiting(task.robot_id, task.task_id)
+            return BtResult(BtStatus.RUNNING)
 
         ctx.world.occupy_resource(resource_id, task.robot_id)
         ctx.world.assign_robot(task.robot_id, task.task_id)
         task.bt_blackboard[acquired_key] = True
+        task.waiting_resource_id = None
+        task.waiting_purpose = None
         task.status = MissionTaskStatus.RUNNING
         return BtResult(BtStatus.SUCCESS)
 
-
-class AcquireDropoffOrStage(BtNode):
-    def __init__(self):
-        self.acquire = AcquireResourceIfManaged("dropoff")
-        self.move_to_staging = MoveTo(STAGING_WAYPOINT, TransportTaskPhase.MOVE_TO_STAGING)
-
-    def tick(self, ctx: TransportTaskContext) -> BtResult:
-        result = self.acquire.tick(ctx)
-        if result.status == BtStatus.SUCCESS:
-            ctx.task.waiting_resource_id = None
-            ctx.task.waiting_purpose = None
-            return result
-
+    def _wait_at_resource_waypoint(
+        self,
+        ctx: TransportTaskContext,
+        wait_waypoint: str | None,
+    ) -> BtResult:
         task = ctx.task
-        task.waiting_resource_id = task.dropoff
-        task.waiting_purpose = "dropoff"
-        if ctx.world.robots[task.robot_id].location != STAGING_WAYPOINT:
+        resource_id = getattr(task, self.endpoint)
+        task.waiting_resource_id = resource_id
+        task.waiting_purpose = self.endpoint
+        if wait_waypoint is None:
+            task.status = MissionTaskStatus.BLOCKED
+            ctx.world.mark_robot_waiting(task.robot_id, task.task_id)
+            return BtResult(BtStatus.RUNNING)
+        if ctx.world.robots[task.robot_id].location != wait_waypoint:
             task.status = MissionTaskStatus.RUNNING
-            return self.move_to_staging.tick(ctx)
+            return MoveTo(wait_waypoint, TransportTaskPhase.MOVE_TO_STAGING).tick(ctx)
 
         task.phase = TransportTaskPhase.WAIT_FOR_RESOURCE
         task.status = MissionTaskStatus.BLOCKED
         ctx.world.mark_robot_waiting(task.robot_id, task.task_id)
         return BtResult(BtStatus.RUNNING)
+
+    def _acquire_phase(self) -> TransportTaskPhase:
+        if self.endpoint == "pickup":
+            return TransportTaskPhase.ACQUIRE_PICKUP
+        return TransportTaskPhase.ACQUIRE_DROPOFF
 
 
 class MoveTo(BtNode):
