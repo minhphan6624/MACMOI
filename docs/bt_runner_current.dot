@@ -1,0 +1,40 @@
+digraph bt_runner_current {
+  graph [
+    rankdir=TB,
+    label="Current TransportTaskBtRunner",
+    labelloc=t,
+    fontsize=20,
+    fontname="Arial"
+  ];
+  node [shape=box, style="rounded,filled", fillcolor="#eef4ff", fontname="Arial"];
+  edge [fontname="Arial"];
+
+  root [label="MemorySequence\ntransport_item", fillcolor="#d8e8ff"];
+
+  assign [label="AssignRobot"];
+  acquire_pickup [label="AcquireResourceIfManaged(pickup)\n- direct can_acquire check\n- occupy resource"];
+  move_pickup [label="MoveTo(pickup)\nRMF MOVE_ROBOT"];
+  load [label="HandleItem(load)\nlocal handling timer"];
+  release_pickup_item [label="ReleasePickupItemIfManaged\nremove package from pickup buffer"];
+
+  acquire_dropoff [label="AcquireDropoffOrStage\nif dropoff acquire fails:\nmove to hardcoded staging\nthen wait/retry", fillcolor="#fff0d6"];
+  move_dropoff [label="MoveTo(dropoff)\nRMF MOVE_ROBOT"];
+  release_pickup_slot [label="ReleaseResourceOccupancyIfManaged(pickup)\nrelease robot slot after leaving pickup"];
+  unload [label="HandleItem(unload)\nlocal handling timer"];
+  vacate [label="VacateDropoffIfNeeded\nif dropoff == transfer:\nmove back to pickup side", fillcolor="#fff0d6"];
+  release_dropoff [label="ReleaseResourceIfManaged(dropoff)\nbuffer package and release robot slot"];
+  release_robot [label="ReleaseRobot"];
+  done [label="MarkTaskSucceeded"];
+
+  root -> assign -> acquire_pickup -> move_pickup -> load -> release_pickup_item
+    -> acquire_dropoff -> move_dropoff -> release_pickup_slot -> unload
+    -> vacate -> release_dropoff -> release_robot -> done;
+
+  transfer_note [
+    label="Issue: transfer/staging policy is split across BT nodes\nand WorldResourceManager.can_acquire()",
+    shape=note,
+    fillcolor="#ffe9e9"
+  ];
+  acquire_dropoff -> transfer_note [style=dashed];
+  vacate -> transfer_note [style=dashed];
+}

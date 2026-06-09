@@ -1,0 +1,49 @@
+digraph bt_runner_resource_access_proposed {
+  graph [
+    rankdir=TB,
+    label="Proposed Resource-Access Transport BT",
+    labelloc=t,
+    fontsize=20,
+    fontname="Arial"
+  ];
+  node [shape=box, style="rounded,filled", fillcolor="#ecf8ef", fontname="Arial"];
+  edge [fontname="Arial"];
+
+  root [label="MemorySequence\ntransport_item", fillcolor="#d9f2df"];
+
+  assign [label="AssignRobot"];
+  request_pickup [label="RequestResourceAccess(pickup)\nasks ResourceManager"];
+  move_pickup_target [label="MoveToAccessTarget\nGRANTED: pickup\nWAIT: resource.wait_waypoint"];
+  wait_pickup [label="Wait/Retry If Needed\npackage missing or resource occupied", fillcolor="#fff0d6"];
+  load [label="HandleItem(load)\nlocal handling timer"];
+  release_pickup [label="ReleaseResourceAccess(pickup)\nrelease item/robot occupancy as appropriate"];
+
+  request_dropoff [label="RequestResourceAccess(dropoff)\nasks ResourceManager"];
+  move_dropoff_target [label="MoveToAccessTarget\nGRANTED: dropoff\nWAIT: resource.wait_waypoint"];
+  wait_dropoff [label="Wait/Retry If Needed\nbuffer full or robot slot occupied", fillcolor="#fff0d6"];
+  unload [label="HandleItem(unload)\nlocal handling timer"];
+  vacate [label="VacateResourceIfRequired\nleave constrained zone before release"];
+  release_dropoff [label="ReleaseResourceAccess(dropoff)\nbuffer package and release occupancy"];
+  release_robot [label="ReleaseRobot"];
+  done [label="MarkTaskSucceeded"];
+
+  root -> assign -> request_pickup -> move_pickup_target -> wait_pickup -> load
+    -> release_pickup -> request_dropoff -> move_dropoff_target -> wait_dropoff
+    -> unload -> vacate -> release_dropoff -> release_robot -> done;
+
+  resource_manager [
+    label="WorldResourceManager.request_access()\nreturns GRANTED / WAIT / BLOCKED\ntransfer has wait_waypoint='staging'",
+    shape=component,
+    fillcolor="#d8e8ff"
+  ];
+
+  transfer_policy [
+    label="Centralized transfer policy:\n- one robot slot\n- one package slot\n- pickup requires package\n- dropoff requires free buffer\n- WAIT target is staging",
+    shape=note,
+    fillcolor="#f4ecff"
+  ];
+
+  request_pickup -> resource_manager [style=dashed, label="pickup request"];
+  request_dropoff -> resource_manager [style=dashed, label="dropoff request"];
+  resource_manager -> transfer_policy [style=dashed];
+}
