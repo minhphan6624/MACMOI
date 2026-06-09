@@ -1,4 +1,9 @@
-from .resources import ResourceReservation, ResourceState
+from .resources import (
+    ResourceAccessDecision,
+    ResourceAccessStatus,
+    ResourceReservation,
+    ResourceState,
+)
 
 
 class WorldResourceManager:
@@ -17,14 +22,38 @@ class WorldResourceManager:
         purpose: str,
         item_id: str | None = None,
     ) -> bool:
+        return self.request_access(resource_id, actor_id, purpose, item_id).status == (
+            ResourceAccessStatus.GRANTED
+        )
+
+    def request_access(
+        self,
+        resource_id: str,
+        actor_id: str,
+        purpose: str,
+        item_id: str | None = None,
+    ) -> ResourceAccessDecision:
         resource = self.resources[resource_id]
+        wait_decision = (
+            ResourceAccessDecision(ResourceAccessStatus.WAIT, resource.wait_waypoint)
+            if resource.wait_waypoint is not None
+            else ResourceAccessDecision(ResourceAccessStatus.BLOCKED, reason="resource_unavailable")
+        )
+        if actor_id in resource.robot_occupancy:
+            return ResourceAccessDecision(ResourceAccessStatus.GRANTED, resource_id)
         if resource.robot_slots_available <= 0:
-            return False
+            return wait_decision
         if purpose == "dropoff":
-            return item_id is not None and resource.package_slots_available > 0
+            if item_id is None:
+                return ResourceAccessDecision(ResourceAccessStatus.BLOCKED, reason="missing_item")
+            if resource.package_slots_available <= 0:
+                return wait_decision
+            return ResourceAccessDecision(ResourceAccessStatus.GRANTED, resource_id)
         if purpose == "pickup":
-            return len(resource.package_occupancy) > 0
-        return True
+            if item_id is not None and item_id in resource.package_occupancy:
+                return ResourceAccessDecision(ResourceAccessStatus.GRANTED, resource_id)
+            return wait_decision
+        return ResourceAccessDecision(ResourceAccessStatus.GRANTED, resource_id)
 
     def reserve(
         self,

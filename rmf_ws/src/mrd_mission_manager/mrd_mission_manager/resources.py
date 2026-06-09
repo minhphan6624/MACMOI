@@ -14,6 +14,12 @@ class ResourceReservationStatus(Enum):
     RELEASED = "RELEASED"
 
 
+class ResourceAccessStatus(Enum):
+    GRANTED = "GRANTED"
+    WAIT = "WAIT"
+    BLOCKED = "BLOCKED"
+
+
 @dataclass
 class ResourceReservation:
     reservation_id: str
@@ -26,11 +32,19 @@ class ResourceReservation:
 
 
 @dataclass
+class ResourceAccessDecision:
+    status: ResourceAccessStatus
+    target: str | None = None
+    reason: str | None = None
+
+
+@dataclass
 class ResourceState:
     resource_id: str
     resource_type: ResourceType
     robot_capacity: int = 1
     package_capacity: int = 0
+    wait_waypoint: str | None = None
     robot_occupancy: list[str] = field(default_factory=list)
     package_occupancy: list[str] = field(default_factory=list)
     reservations: dict[str, ResourceReservation] = field(default_factory=dict)
