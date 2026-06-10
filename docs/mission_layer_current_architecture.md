@@ -449,4 +449,5 @@ MissionOrchestrator:
   explicit return-home behavior, pause/resume/abort semantics
 ```
 
-See `docs/mission_layer_extensions.md` for the recommended next improvements.
+See `docs/mission_layer_strengthening_suggestions.md` for the recommended next
+improvements.
