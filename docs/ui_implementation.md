@@ -32,18 +32,6 @@ Main content area split into panels:
   * Alerts Panel
   * Event Log
 
-Suggested layout:
-
-┌──────────────────────────────────────────────────────────────┐
-│ Top Bar, mission status, system status, main controls         │
-├───────────────────────┬──────────────────────────────────────┤
-│ Mission Overview      │ Map View                             │
-│ Fleet Panel           │                                      │
-├───────────────────────┼──────────────────────────────────────┤
-│ Mission Timeline      │ Robot / Task Detail Panel            │
-├───────────────────────┴──────────────────────────────────────┤
-│ Alerts and Event Log                                          │
-└──────────────────────────────────────────────────────────────┘
 
 The layout should be usable on a standard laptop screen. Prioritize clarity over visual complexity.
 

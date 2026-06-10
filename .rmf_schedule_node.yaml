@@ -1,0 +1,30 @@
+- operation: Add
+  participant_description:
+    name: tb3_2
+    group: tb3_lab
+    responsiveness: Responsive
+    profile:
+      footprint:
+        type: Circle
+        index: 0
+      vicinity:
+        type: Circle
+        index: 1
+      shape_context:
+        - 0.22
+        - 0.5
+- operation: Add
+  participant_description:
+    name: tb3_1
+    group: tb3_lab
+    responsiveness: Responsive
+    profile:
+      footprint:
+        type: Circle
+        index: 0
+      vicinity:
+        type: Circle
+        index: 1
+      shape_context:
+        - 0.22
+        - 0.5
