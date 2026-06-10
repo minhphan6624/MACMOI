@@ -11,4 +11,4 @@ DESTINATION_WAYPOINT = "destination"
 UPSTREAM_HOME_WAYPOINT = "robot1_home"
 DOWNSTREAM_HOME_WAYPOINT = "robot2_home"
 
-REQUESTER = "mrd_mission_manager"
+REQUESTER = "mission_manager"

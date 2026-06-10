@@ -17,13 +17,13 @@ from .mission_definition import (
     UPSTREAM_ROBOT,
 )
 from .mission_serializer import action_to_dict, event_to_dict, serialize_runtime_mission_state
-from .orchestrator import MissionOrchestrator
+from .mission_manager import MissionManager
 from .rmf_execution_adapter import RmfExecutionAdapter, RmfExecutionAdapterConfig
 
 
 class MissionManagerNode(Node):
     def __init__(self):
-        super().__init__("mrd_mission_manager")
+        super().__init__("mission_manager")
 
         self.declare_parameter("mission_id", "m1")
         self.declare_parameter("total_packages", 1)
@@ -36,7 +36,7 @@ class MissionManagerNode(Node):
         mission_id = self.get_parameter("mission_id").value
         total_packages = self.get_parameter("total_packages").value
 
-        self.orchestrator = MissionOrchestrator.create_default(
+        self.mission_manager = MissionManager.create_default(
             mission_id,
             total_packages,
             upstream_robot=UPSTREAM_ROBOT,
@@ -98,7 +98,7 @@ class MissionManagerNode(Node):
 
         if self.get_parameter("auto_start").value:
             self._record_event({"command": "auto_start", "mission_id": mission_id})
-            self._dispatch_commands(self.orchestrator.start())
+            self._dispatch_commands(self.mission_manager.start())
         else:
             self._publish_mission_state()
 
@@ -112,7 +112,7 @@ class MissionManagerNode(Node):
     def _handle_api_response(self, msg: ApiResponse) -> None:
         command_id = self.rmf_adapter.handle_api_response(msg)
         if command_id is not None:
-            self.orchestrator.execution.mark_running(command_id)
+            self.mission_manager.execution.mark_running(command_id)
             self.get_logger().info(f"Mission command accepted: {command_id}")
         self._publish_mission_state()
 
@@ -132,7 +132,7 @@ class MissionManagerNode(Node):
                     "rmf_task_id": task_state.task_id,
                 }
             )
-            commands.extend(self.orchestrator.complete_command(command_id))
+            commands.extend(self.mission_manager.complete_command(command_id))
         self._dispatch_commands(commands)
 
     def _handle_fleet_state(self, msg: FleetState) -> None:
@@ -144,7 +144,7 @@ class MissionManagerNode(Node):
         for rmf_task_id, command_id in list(
             self.rmf_adapter.command_context_by_rmf_task_id.items()
         ):
-            command = self.orchestrator.execution.commands.get(command_id)
+            command = self.mission_manager.execution.commands.get(command_id)
             if command is None:
                 continue
 
@@ -167,7 +167,7 @@ class MissionManagerNode(Node):
                     "source": "fleet_state",
                 }
             )
-            commands.extend(self.orchestrator.complete_command(completed_command_id))
+            commands.extend(self.mission_manager.complete_command(completed_command_id))
 
         self._dispatch_commands(commands)
 
@@ -178,12 +178,12 @@ class MissionManagerNode(Node):
             self.get_logger().warning(f"Invalid mission command JSON: {msg.data}")
             return
 
-        if command.get("mission_id") != self.orchestrator.runtime.mission_id:
+        if command.get("mission_id") != self.mission_manager.runtime.mission_id:
             return
 
         if command.get("command") == "start":
             self._record_event(command)
-            self._dispatch_commands(self.orchestrator.start())
+            self._dispatch_commands(self.mission_manager.start())
             return
 
         self.get_logger().warning(f"Unsupported mission command: {command}")
@@ -192,8 +192,8 @@ class MissionManagerNode(Node):
         for command in commands:
             self._record_action(command)
             if command.command_type == ExecutionCommandType.MOVE_ROBOT:
-                self.rmf_adapter.submit_command(command, self.orchestrator.runtime.world)
-                self.orchestrator.execution.mark_submitted(command.command_id)
+                self.rmf_adapter.submit_command(command, self.mission_manager.runtime.world)
+                self.mission_manager.execution.mark_submitted(command.command_id)
             elif command.command_type == ExecutionCommandType.HANDLE_ITEM:
                 self._start_handling_timer(command)
             else:
@@ -211,7 +211,7 @@ class MissionManagerNode(Node):
             "seconds": seconds,
         }
         self.active_handling_timers.append(timer_info)
-        self.orchestrator.execution.mark_running(command.command_id)
+        self.mission_manager.execution.mark_running(command.command_id)
 
         def on_timer():
             timer_ref["timer"].cancel()
@@ -224,7 +224,7 @@ class MissionManagerNode(Node):
                     "source": "handling_timer",
                 }
             )
-            self._dispatch_commands(self.orchestrator.complete_command(command.command_id))
+            self._dispatch_commands(self.mission_manager.complete_command(command.command_id))
 
         timer_ref["timer"] = self.create_timer(seconds, on_timer)
         self.handling_timers.append(timer_ref["timer"])
@@ -245,7 +245,7 @@ class MissionManagerNode(Node):
         msg = String()
         msg.data = json.dumps(
             serialize_runtime_mission_state(
-                self.orchestrator,
+                self.mission_manager,
                 self.rmf_adapter,
                 {
                     "last_event": self.last_event,

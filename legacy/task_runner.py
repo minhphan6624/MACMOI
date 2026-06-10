@@ -1,7 +1,7 @@
-from ..rmf_ws.src.mrd_mission_manager.mrd_mission_manager.execution import ExecutionCommand, ExecutionCommandType, ExecutionManager
-from ..rmf_ws.src.mrd_mission_manager.mrd_mission_manager.mission_definition import STAGING_WAYPOINT
-from ..rmf_ws.src.mrd_mission_manager.mrd_mission_manager.mission_tasks import MissionTaskStatus, TransportItemTask, TransportTaskPhase
-from ..rmf_ws.src.mrd_mission_manager.mrd_mission_manager.world import RuntimeWorld
+from mission_manager.execution import ExecutionCommand, ExecutionCommandType, ExecutionManager
+from mission_manager.mission_definition import STAGING_WAYPOINT
+from mission_manager.mission_tasks import MissionTaskStatus, TransportItemTask, TransportTaskPhase
+from mission_manager.world import RuntimeWorld
 
 
 class TransportTaskRunner:

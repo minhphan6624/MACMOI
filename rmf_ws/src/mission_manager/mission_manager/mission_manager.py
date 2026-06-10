@@ -26,7 +26,7 @@ class MissionRuntime:
     world: RuntimeWorld
 
 
-class MissionOrchestrator:
+class MissionManager:
     def __init__(
         self,
         runtime: MissionRuntime,

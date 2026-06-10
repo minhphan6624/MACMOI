@@ -49,7 +49,7 @@ class RmfExecutionAdapter:
                     "rounds": 1,
                 },
                 "labels": [
-                    "app=mrd_mission_manager",
+                    "app=mission_manager",
                     f"command_id={command.command_id}",
                     f"task_id={command.task_id}",
                 ],
