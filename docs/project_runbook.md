@@ -197,7 +197,7 @@ ROS shell around the refactored task-flow mission runtime:
 
 ```text
 MissionManagerNode
-  -> MissionOrchestrator
+  -> MissionManager
   -> TransportTaskScheduler
   -> TransportTaskRunner
   -> ExecutionManager
@@ -213,7 +213,7 @@ source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 run mrd_mission_manager mission_manager_node \
+ros2 run mission_manager mission_manager_node \
   --ros-args \
   -p mission_id:=m1 \
   -p total_packages:=3 \
@@ -455,17 +455,17 @@ source /opt/ros/jazzy/setup.bash
 source rmf_ws/.venv/bin/activate
 source rmf_ws/install/setup.bash
 
-PYTHONPATH=rmf_ws/src/mrd_mission_manager \
-python3 -m py_compile rmf_ws/src/mrd_mission_manager/mrd_mission_manager/*.py
+PYTHONPATH=rmf_ws/src/mission_manager \
+python3 -m py_compile rmf_ws/src/mission_manager/mission_manager/*.py
 ```
 
 Run a one-package runtime smoke check without ROS:
 
 ```bash
-PYTHONPATH=rmf_ws/src/mrd_mission_manager python3 - <<'PY'
-from mrd_mission_manager.orchestrator import MissionOrchestrator
+PYTHONPATH=rmf_ws/src/mission_manager python3 - <<'PY'
+from mission_manager.mission_manager import MissionManager
 
-orch = MissionOrchestrator.create_default("smoke", 1)
+orch = MissionManager.create_default("smoke", 1)
 commands = orch.start()
 while commands:
     commands = orch.complete_command(commands[0].command_id)

@@ -1,6 +1,6 @@
 # Mission Layer Current Architecture
 
-This document describes the current `mrd_mission_manager` implementation. The
+This document describes the current `mission_manager` implementation. The
 mission layer is a small task orchestration system around package transport,
 runtime world state, resource access, behavior-tree task execution, and an RMF
 movement adapter.
@@ -25,13 +25,13 @@ The active runtime path is:
 
 ```text
 MissionManagerNode
-  -> MissionOrchestrator
+  -> MissionManager
   -> TransportTaskScheduler
   -> TransportTaskBtRunner
   -> ExecutionManager
   -> RmfExecutionAdapter / handling timer
   -> command completion
-  -> MissionOrchestrator
+  -> MissionManager
 ```
 
 The main split is:
@@ -40,7 +40,7 @@ The main split is:
 MissionManagerNode:
   ROS I/O, timers, RMF subscriptions, mission_state publication
 
-MissionOrchestrator:
+MissionManager:
   mission lifecycle, task coordination, command completion handling
 
 TransportTaskScheduler:
@@ -66,7 +66,7 @@ Source map:
 
 ```text
 mission_manager_node.py       ROS node, topics, timers, RMF subscriptions
-orchestrator.py               mission lifecycle and task coordination
+mission_manager.py               mission lifecycle and task coordination
 mission_tasks.py              mission/task status and transport task model
 scheduler.py                  deterministic ready-task selection
 behavior_tree.py              minimal BT primitives
@@ -83,7 +83,7 @@ mission_serializer.py         mission_state JSON serialization
 
 ## Default Mission Model
 
-`MissionOrchestrator.create_default(...)` creates two tasks per package:
+`MissionManager.create_default(...)` creates two tasks per package:
 
 ```text
 P1:source_to_transfer
@@ -120,7 +120,7 @@ traffic planning and navigation execution.
 
 ## Mission Orchestrator
 
-`orchestrator.py` owns the mission runtime.
+`mission_manager.py` owns the mission runtime.
 
 `MissionRuntime` holds:
 
@@ -131,7 +131,7 @@ transport task instances
 RuntimeWorld
 ```
 
-The orchestrator owns:
+The mission manager owns:
 
 ```text
 TransportTaskScheduler
@@ -159,7 +159,7 @@ complete_command(command_id)
   optionally start another ready task
 ```
 
-The orchestrator does not publish ROS messages or RMF requests directly. It only
+The mission manager does not publish ROS messages or RMF requests directly. It only
 returns `ExecutionCommand` objects.
 
 ---
@@ -338,7 +338,7 @@ When RMF reports a task completion, the node maps the RMF task ID back to the
 mission command ID and calls:
 
 ```text
-orchestrator.complete_command(command_id)
+mission_manager.complete_command(command_id)
 ```
 
 ---
@@ -360,7 +360,7 @@ The operator starts the mission:
 
 ```text
 MissionManagerNode
-  -> MissionOrchestrator.start()
+  -> MissionManager.start()
 ```
 
 Normal one-package flow:
@@ -445,7 +445,7 @@ RmfExecutionAdapter:
 MissionManagerNode:
   replace handling timers with real robot/hardware confirmations
 
-MissionOrchestrator:
+MissionManager:
   explicit return-home behavior, pause/resume/abort semantics
 ```
 

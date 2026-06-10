@@ -51,7 +51,7 @@ An explicit collaborative mission model with dependencies, resources, states, an
 The current implementation already has a useful separation of concerns:
 
 ```text
-MissionOrchestrator:
+MissionManager:
   mission lifecycle and task coordination
 
 TransportTaskScheduler:
