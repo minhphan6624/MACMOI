@@ -1,16 +1,17 @@
 # Mission Layer Current Stage Issues
 
-This document records current mission-layer issues observed during test runs.
-The focus is the shared transfer-zone and staging behavior in the two-robot
+This document records current mission-layer issues observed during test runs,
+focused on the shared `transfer` zone and `staging` behavior in the two-robot
 handoff mission.
 
-## 1. Staging behavior is implicit
+The current architecture is still a valid centralized mission-control design.
+The issues below are mostly about making shared-resource coordination more
+explicit, better timed, and easier to explain.
 
-The current system can send a robot to `staging` when it requests access to
-`transfer` and the resource manager returns `WAIT`.
+## 1. Waiting at staging is implicit
 
-This is useful, but the behavior is currently a fallback inside the transport
-task BT rather than an explicit mission policy.
+The system can send a robot to `staging` when it requests `transfer` access and
+the resource manager returns `WAIT`.
 
 Current behavior:
 
@@ -23,14 +24,7 @@ task becomes BLOCKED
 task retries when the mission advances again
 ```
 
-Issue:
-
-```text
-The mission state does not clearly explain why the robot is waiting, who or what
-is blocking it, or which event should unblock it.
-```
-
-Observed examples:
+Observed cases:
 
 - `robot2` waits at staging because the next package is not yet available at
   transfer.
@@ -39,7 +33,43 @@ Observed examples:
 - `robot1` waits at staging because transfer already contains one package and
   the transfer package capacity is full.
 
-## 2. Transfer access is mostly occupancy-based
+Issue:
+
+```text
+The mission state does not clearly explain why the robot is waiting, what is
+blocking it, or what event will unblock it.
+```
+
+Recommended fix:
+
+- add structured blocked reasons
+- expose `waiting_at`, `blocked_by`, `unblock_condition`, and `next_expected_event`
+- wake blocked tasks from specific package/resource/robot state changes
+- make waiting policy configurable instead of treating `staging` as only a
+  hardcoded waypoint
+
+Useful blocked reasons:
+
+```text
+TRANSFER_ROBOT_OCCUPIED
+TRANSFER_PACKAGE_FULL
+PACKAGE_NOT_AVAILABLE
+WAITING_FOR_TRANSFER_LEASE
+WAITING_FOR_ROBOT_TO_EXIT_TRANSFER
+WAITING_FOR_PACKAGE_PICKUP_CONFIRMATION
+WAITING_FOR_PACKAGE_DROPOFF_CONFIRMATION
+```
+
+Example target state:
+
+```text
+robot1 is waiting at staging
+reason: TRANSFER_PACKAGE_FULL
+blocked by: robot2 transfer_to_destination
+next expected event: robot2 loads package from transfer
+```
+
+## 2. Transfer ownership is mostly occupancy-based
 
 The transfer zone currently checks robot occupancy and package occupancy when a
 robot asks for access.
@@ -55,12 +85,11 @@ Is the requested package buffered at transfer?
 Issue:
 
 ```text
-The mission layer does not yet strongly model who owns the next right to enter
+The mission layer does not strongly model who owns the next right to enter
 transfer, for what purpose, and in what order.
 ```
 
-This makes transfer coordination harder to reason about when both robots are
-near the transfer workflow:
+This makes coordination harder when both robots are near the transfer workflow:
 
 - upstream robot wants to drop off a new package
 - downstream robot wants to pick up an existing package
@@ -68,215 +97,9 @@ near the transfer workflow:
 - transfer already has a buffered package
 - a robot is waiting at staging
 
-Suggested direction:
+Recommended fix:
 
-```text
-Make transfer access lease-based:
-  active lease
-  queue
-  lease purpose: pickup or dropoff
-  package id
-  holder robot
-  timeout/release rule
-```
-
-## 3. Waiting reasons are too coarse
-
-Current task state can show that a task is `BLOCKED`, and the task can record
-the resource and purpose it is waiting on.
-
-Issue:
-
-```text
-Different blocked cases collapse into similar-looking waiting behavior.
-```
-
-Important cases that should be distinguishable:
-
-- `TRANSFER_ROBOT_OCCUPIED`
-- `TRANSFER_PACKAGE_FULL`
-- `PACKAGE_NOT_AVAILABLE`
-- `WAITING_FOR_TRANSFER_LEASE`
-- `WAITING_FOR_ROBOT_TO_EXIT_TRANSFER`
-- `WAITING_FOR_PACKAGE_PICKUP_CONFIRMATION`
-- `WAITING_FOR_PACKAGE_DROPOFF_CONFIRMATION`
-
-The dashboard and logs should be able to show:
-
-```text
-robot1 is waiting at staging
-reason: TRANSFER_PACKAGE_FULL
-blocked by: robot2 transfer_to_destination
-next expected event: robot2 loads package from transfer
-```
-
-or:
-
-```text
-robot2 is waiting at staging
-reason: PACKAGE_NOT_AVAILABLE
-blocked by: robot1 source_to_transfer
-next expected event: robot1 unloads package at transfer
-```
-
-## 4. Blocked tasks depend on broad mission advancement
-
-When a task is blocked at staging, it is retried when the mission manager ticks
-again. Ticks currently happen from mission start, command completions, handling
-timers, and RMF/fleet callbacks.
-
-Issue:
-
-```text
-The task is not woken by a specific resource/package event. It is retried when
-some broader mission advancement happens.
-```
-
-This can work in the simple flow, but it makes the behavior less explicit and
-harder to debug.
-
-Suggested direction:
-
-```text
-Wake blocked tasks from specific state changes:
-  package buffered at transfer
-  package removed from transfer
-  transfer robot slot released
-  robot reached staging
-  transfer lease released
-  handling confirmation received
-```
-
-## 5. Staging is not modeled as a resource
-
-The transfer resource has a `wait_waypoint`, currently `staging`.
-
-Issue:
-
-```text
-The mission layer treats staging as a waypoint, not as a resource with its own
-capacity or policy.
-```
-
-This matters if:
-
-- both robots can be sent to the same staging waypoint
-- staging blocks the transfer path
-- upstream and downstream robots need different staging locations
-- waiting at home is safer than waiting near transfer on some maps
-
-Suggested direction:
-
-```text
-Make waiting policy configurable:
-  wait_at = staging
-  wait_at = home
-  wait_at = current_position
-  staging_capacity = 1
-  upstream_staging = ...
-  downstream_staging = ...
-```
-
-## 6. Resource release timing can reduce concurrency
-
-Some transfer state changes happen only when the BT reaches later steps.
-
-Issue:
-
-```text
-The mission-layer transfer state may remain occupied longer than the physical
-handoff requires, which can delay the other robot.
-```
-
-Examples to review:
-
-- after downstream pickup, transfer package capacity should become available as
-  soon as pickup is confirmed
-- after a robot exits transfer, robot occupancy should be released promptly
-- after upstream dropoff, the package should become available only after dropoff
-  is confirmed and the transfer buffer state is updated
-
-Suggested direction:
-
-```text
-Tie resource state updates to explicit events:
-  pickup confirmed
-  dropoff confirmed
-  robot entered transfer
-  robot exited transfer
-```
-
-## 7. Desired target behavior
-
-For upstream dropoff:
-
-```text
-robot1 loads package at source
-robot1 requests transfer dropoff lease
-if transfer robot slot or package slot is unavailable:
-  robot1 moves to staging
-  robot1 waits with an explicit blocked reason
-when transfer becomes available:
-  robot1 receives transfer lease
-  robot1 moves from staging to transfer
-  robot1 unloads package
-  package is buffered at transfer
-  robot1 exits transfer
-  transfer lease is released
-```
-
-For downstream pickup:
-
-```text
-robot2 completes delivery
-robot2 requests next transfer pickup lease
-if package is not available or transfer is occupied:
-  robot2 moves to staging
-  robot2 waits with an explicit blocked reason
-when package is buffered and transfer is available:
-  robot2 receives transfer lease
-  robot2 moves from staging to transfer
-  robot2 loads package
-  package is removed from transfer buffer
-  robot2 exits transfer
-  transfer lease is released
-```
-
-## 8. Recommended fix direction
-
-The current architecture does not need to become fully decentralized. The
-central mission layer can keep ownership of the collaboration rules.
-
-Recommended improvements:
-
-- add explicit transfer leases and queueing
-- add structured blocked reasons and unblock conditions
-- expose waiting state in mission state and dashboard data
-- wake blocked tasks from resource/package/robot state-change events
-- model staging as a configurable waiting policy/resource
-- add a low-frequency watchdog only for stale state, timeouts, and missed events
-
-The main goal is to move from:
-
-```text
-robot tried transfer, got WAIT, moved to staging
-```
-
-to:
-
-```text
-robot is waiting at staging because transfer/package state blocks its lease;
-the mission layer knows what will unblock it and can explain that to the operator.
-```
-
-## 9. Proposed solutions discussed
-
-### 9.1 Separate transfer lease from physical occupancy
-
-The current transfer `robot_occupancy` acts partly like permission to use
-transfer and partly like physical presence inside transfer.
-
-This should be split into two concepts:
+Split transfer control into:
 
 ```text
 lease:
@@ -284,61 +107,56 @@ lease:
 
 occupancy:
   robot is considered physically inside the transfer conflict area
+
+package buffer:
+  package is stored at transfer and occupies package capacity
 ```
 
-The resource manager should grant a lease before a robot is allowed to enter
-transfer. Robot occupancy should represent the robot being inside the transfer
-area, and should only be released when the robot is confirmed clear of that
-area.
+The resource manager should grant a lease before a robot enters transfer.
+Robot occupancy should only represent the robot being inside the transfer
+conflict area. Package buffer state should represent package capacity.
 
-This avoids using one field for both scheduling intent and physical safety.
+This avoids using one field to mean scheduling intent, physical presence, and
+package availability.
 
-### 9.2 Add explicit transfer exit waypoints
-
-The current system has no independent "clear of transfer" detection. A robot is
-considered clear when the BT releases the transfer resource.
-
-For the current architecture, the recommended short-term fix is to add explicit
-exit waypoints, such as:
+Suggested transfer model:
 
 ```text
-transfer_upstream_exit
-transfer_downstream_exit
+transfer:
+  robot_capacity = 1
+  package_capacity = 1
+  active_lease = robot / task / pickup_or_dropoff / package
+  robot_occupancy = robot currently inside transfer
+  package_buffer = package currently stored at transfer
+  queue = waiting lease requests
 ```
 
-Then release transfer robot occupancy only after the robot reaches the
-appropriate exit waypoint.
+## 3. Resource state changes are tied to BT ordering
 
-Example upstream dropoff:
+Some transfer state changes happen only when the BT reaches later cleanup steps.
+This can block the other robot longer than necessary or make package state
+available later than expected.
+
+Current sources of timing mismatch:
+
+- transfer access grant immediately marks the resource occupied, before the
+  robot physically reaches transfer
+- downstream pickup can hold transfer occupancy until the robot reaches the
+  final destination
+- package buffer changes are tied to BT cleanup order instead of directly to
+  load/unload confirmation
+- robot clearance is logical, not independently detected from pose or region
+
+Issue:
 
 ```text
-move source -> transfer
-unload package
-buffer package at transfer
-move transfer -> transfer_upstream_exit
-release transfer robot occupancy
-release transfer lease
-mark source_to_transfer succeeded
+The mission-layer transfer state may not match the physical handoff state closely
+enough for efficient coordination.
 ```
 
-Example downstream pickup:
+Recommended fix:
 
-```text
-move staging -> transfer
-load package
-remove package from transfer buffer
-move transfer -> transfer_downstream_exit
-release transfer robot occupancy
-release transfer lease
-move transfer_downstream_exit -> destination
-```
-
-This is a practical substitute for true region/pose-based clearance.
-
-### 9.3 Update package buffer state on handling confirmation
-
-Package capacity should be updated when the load/unload action is confirmed,
-not later due to generic BT cleanup ordering.
+Update transfer state according to the event that actually changes it.
 
 For upstream dropoff:
 
@@ -359,39 +177,48 @@ on load confirmed:
   robot carries package
 ```
 
-This allows the mission layer to distinguish:
+For robot occupancy:
 
 ```text
-package is available/unavailable
-robot is still occupying transfer
+on robot reaches transfer:
+  mark transfer robot occupancy active
+
+on robot confirmed clear of transfer:
+  release transfer robot occupancy
+  release transfer lease
 ```
 
-Those should not be the same state.
+Do not release transfer robot occupancy when a robot merely starts moving away.
+Release it only after the robot is confirmed clear.
 
-### 9.4 Release robot occupancy after exit confirmation, not action start
+## 4. Clear-of-transfer and BT ordering
 
-The mission layer should not release transfer robot occupancy when a robot merely
-starts moving away from transfer.
+The current implementation considers a robot clear of transfer when the BT
+releases the transfer resource. There is no independent physical check that the
+robot is outside the transfer conflict area.
 
-Safer rule:
+Issue:
 
 ```text
-release transfer robot occupancy only after the exit movement completes
+Transfer robot occupancy can be released too late or too broadly because it is
+controlled by task step ordering rather than explicit transfer clearance.
 ```
 
-This keeps the capacity rule meaningful:
+Recommended short-term fix:
+
+Add explicit transfer exit waypoints:
 
 ```text
-transfer.robot_capacity = 1
+transfer_upstream_exit
+transfer_downstream_exit
 ```
 
-If the robot has started moving but is still crossing the transfer area, the
-other robot should still be blocked from entering.
+Then release transfer robot occupancy only after the robot reaches the relevant
+exit waypoint. This gives the BT a concrete point where the robot is considered
+clear of the transfer conflict area.
 
-### 9.5 Reorder BT steps around transfer
-
-The BT should make transfer state transitions match the physical meaning of each
-step.
+The BT should then make package state, robot occupancy, and lease state change
+at the step that physically justifies the update.
 
 Recommended upstream dropoff order:
 
@@ -430,11 +257,8 @@ release robot / mark task succeeded
 This fixes the current over-blocking case where downstream pickup can hold
 transfer occupancy until the robot reaches the final destination.
 
-### 9.6 Keep vacating, but make it local to the transfer region
-
-Vacating is still necessary while transfer has robot capacity 1.
-
-However, vacating should mean:
+Vacating is still necessary while `transfer.robot_capacity = 1`, but vacating
+should mean:
 
 ```text
 robot is clear of the transfer conflict area
@@ -446,27 +270,36 @@ It should not mean:
 robot completed the entire remaining delivery
 ```
 
-The exit waypoint should be close enough to transfer to prove clearance, but far
-enough away that another robot can safely enter transfer.
+Longer term, clear-of-transfer can be based on robot pose or footprint leaving a
+transfer region, but exit waypoints are simpler and fit the current system.
 
-### 9.7 Use watchdog polling only for reconciliation
+## 5. Event-driven wakeups should be explicit
 
-A periodic loop can be useful, but it should not be the primary mechanism for
-normal mission progression.
+Blocked tasks currently retry when the mission manager advances through broad
+events such as command completions, timers, or RMF/fleet callbacks.
 
-Use event-driven wakeups for normal behavior:
+Issue:
 
 ```text
-package buffered
-package removed
-transfer occupancy released
-lease released
+A task waiting at staging is not woken by a specific resource or package event.
+It is retried when some broader mission advancement happens.
+```
+
+Recommended fix:
+
+Wake affected blocked tasks from explicit events:
+
+```text
+package buffered at transfer
+package removed from transfer
+transfer robot occupancy released
+transfer lease released
 robot reached staging
 robot reached transfer exit
 handling confirmed
 ```
 
-Use low-frequency polling/watchdog checks for:
+Use low-frequency watchdog polling only for reconciliation:
 
 ```text
 stale command detection
@@ -477,4 +310,54 @@ resource held too long
 mission belief vs fleet-state reconciliation
 ```
 
-This keeps the mission explainable while still protecting against missed events.
+Normal mission progression should remain event-driven and explainable.
+
+## 6. Summary of desired behavior
+
+For upstream dropoff:
+
+```text
+robot1 loads package at source
+robot1 requests transfer dropoff lease
+if transfer robot slot or package slot is unavailable:
+  robot1 moves to staging
+  robot1 waits with an explicit blocked reason
+when transfer becomes available:
+  robot1 receives transfer lease
+  robot1 moves from staging to transfer
+  robot1 unloads package
+  package is buffered at transfer
+  robot1 exits transfer
+  transfer occupancy and lease are released
+```
+
+For downstream pickup:
+
+```text
+robot2 completes delivery
+robot2 requests next transfer pickup lease
+if package is not available or transfer is occupied:
+  robot2 moves to staging
+  robot2 waits with an explicit blocked reason
+when package is buffered and transfer is available:
+  robot2 receives transfer lease
+  robot2 moves from staging to transfer
+  robot2 loads package
+  package is removed from transfer buffer
+  robot2 exits transfer
+  transfer occupancy and lease are released
+  robot2 continues to destination
+```
+
+The goal is to move from:
+
+```text
+robot tried transfer, got WAIT, moved to staging
+```
+
+to:
+
+```text
+robot is waiting at staging because transfer/package state blocks its lease;
+the mission layer knows what will unblock it and can explain that to the operator.
+```
