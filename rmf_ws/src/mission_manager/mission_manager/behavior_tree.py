@@ -27,7 +27,7 @@ class TransportTaskContext:
 
     task: TransportItemTask
     world: MissionWorld
-    execution: ExecutionManager
+    execution_manager: ExecutionManager
 
 
 class BtNode:

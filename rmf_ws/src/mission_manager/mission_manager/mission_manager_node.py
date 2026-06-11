@@ -156,7 +156,7 @@ class MissionManagerNode(Node):
     def _handle_api_response(self, msg: ApiResponse) -> None:
         command_id = self.rmf_adapter.handle_api_response(msg)
         if command_id is not None:
-            self.mission_manager.execution.mark_running(command_id)
+            self.mission_manager.execution_manager.mark_running(command_id)
             self.get_logger().info(f"Mission command accepted: {command_id}")
         self._publish_mission_state()
 
@@ -192,9 +192,9 @@ class MissionManagerNode(Node):
         commands = []
         fleet_robots = {robot.name: robot for robot in msg.robots}
         for rmf_task_id, command_id in list(
-            self.rmf_adapter.command_context_by_rmf_task_id.items()
+            self.rmf_adapter.command_id_by_rmf_task_id.items()
         ):
-            command = self.mission_manager.execution.commands.get(command_id)
+            command = self.mission_manager.execution_manager.commands.get(command_id)
             if command is None or self._is_terminal_command(command):
                 continue
 
@@ -321,7 +321,7 @@ class MissionManagerNode(Node):
             self.get_logger().warning(f"Execution result missing command_id: {result}")
             return
 
-        command = self.mission_manager.execution.commands.get(command_id)
+        command = self.mission_manager.execution_manager.commands.get(command_id)
         if command is None or self._is_terminal_command(command):
             return
 
@@ -337,7 +337,7 @@ class MissionManagerNode(Node):
 
         if status in ("FAILED", "CANCELLED"):
             error = result.get("error") or status
-            self.mission_manager.execution.mark_failed(command_id, error)
+            self.mission_manager.execution_manager.mark_failed(command_id, error)
             self._record_event(result)
             self._publish_mission_state()
 
@@ -349,7 +349,7 @@ class MissionManagerNode(Node):
             if command.command_type == ExecutionCommandType.MOVE_ROBOT:
                 self._publish_execution_command(command)
                 self.rmf_adapter.submit_command(command, self.mission_manager.runtime.world)
-                self.mission_manager.execution.mark_submitted(command.command_id)
+                self.mission_manager.execution_manager.mark_submitted(command.command_id)
             elif command.command_type == ExecutionCommandType.HANDLE_ITEM:
                 self._start_handling_timer(command)
             else:
@@ -388,7 +388,7 @@ class MissionManagerNode(Node):
             "seconds": seconds,
         }
         self.active_handling_timers.append(timer_info)
-        self.mission_manager.execution.mark_running(command.command_id)
+        self.mission_manager.execution_manager.mark_running(command.command_id)
 
         def on_timer():
             """Complete the simulated package handling command."""

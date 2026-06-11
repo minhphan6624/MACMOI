@@ -45,7 +45,7 @@ class MissionWorld:
         self.robots = robots
         self.items = items
         self.resources = resources
-        self.resources_manager = ResourceManager(resources)
+        self.resource_manager = ResourceManager(resources)
 
     def is_robot_available(self, robot_id: str) -> bool:
         robot = self.robots.get(robot_id)

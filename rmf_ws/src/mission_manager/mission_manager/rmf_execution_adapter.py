@@ -30,8 +30,8 @@ class RmfExecutionAdapter:
         self.config = config or RmfExecutionAdapterConfig()
         self.publish_request = publish_request
         self.logger = logger
-        self.pending_commands: dict[str, str] = {}
-        self.command_context_by_rmf_task_id: dict[str, str] = {}
+        self.command_id_by_request_id: dict[str, str] = {}
+        self.command_id_by_rmf_task_id: dict[str, str] = {}
         self.completed_rmf_task_ids: set[str] = set()
 
     def build_payload(self, command: ExecutionCommand, world: MissionWorld) -> dict[str, Any]:
@@ -74,7 +74,7 @@ class RmfExecutionAdapter:
 
         request_id = f"mission_{uuid4()}"
         payload = self.build_payload(command, world)
-        self.pending_commands[request_id] = command.command_id
+        self.command_id_by_request_id[request_id] = command.command_id
 
         if self.publish_request is not None:
             self.publish_request(request_id, json.dumps(payload))
@@ -88,7 +88,7 @@ class RmfExecutionAdapter:
         if hasattr(msg, "type") and msg.type != responding_type:
             return None
 
-        command_id = self.pending_commands.pop(msg.request_id, None)
+        command_id = self.command_id_by_request_id.pop(msg.request_id, None)
         if command_id is None:
             return None
 
@@ -102,7 +102,7 @@ class RmfExecutionAdapter:
             self._log_warning(f"RMF command response has no task ID: {response}")
             return None
 
-        self.command_context_by_rmf_task_id[task_id] = command_id
+        self.command_id_by_rmf_task_id[task_id] = command_id
         return command_id
 
     def command_from_completed_task(self, task_id: str) -> str | None:
@@ -111,7 +111,7 @@ class RmfExecutionAdapter:
         if task_id in self.completed_rmf_task_ids:
             return None
 
-        command_id = self.command_context_by_rmf_task_id.get(task_id)
+        command_id = self.command_id_by_rmf_task_id.get(task_id)
         if command_id is None:
             return None
 

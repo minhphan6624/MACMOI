@@ -2,17 +2,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 
-class MissionStatus(Enum):
-    """High-level lifecycle state for one mission run."""
-
-    CREATED = "CREATED"
-    READY = "READY"
-    RUNNING = "RUNNING"
-    PAUSED = "PAUSED"
-    COMPLETED = "COMPLETED"
-    ABORTED = "ABORTED"
-
-
 class MissionTaskStatus(Enum):
     """Lifecycle state for one mission task instance."""
 

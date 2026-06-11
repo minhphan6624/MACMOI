@@ -15,11 +15,11 @@ from .world import MissionWorld, RobotStatus
 class TransportTaskBtRunner:
     """Runs the behavior-tree sequence for one transport task."""
 
-    def __init__(self, world: MissionWorld, execution: ExecutionManager):
+    def __init__(self, world: MissionWorld, execution_manager: ExecutionManager):
         """Create the fixed transport sequence used by each package task."""
 
         self.world = world
-        self.execution = execution
+        self.execution_manager = execution_manager
         self.tree = MemorySequence(
             "transport_item",
             [
@@ -48,8 +48,10 @@ class TransportTaskBtRunner:
 
         if task.robot_id is None:
             return []
+        
         task.status = MissionTaskStatus.RUNNING
         task.phase = TransportTaskPhase.ACQUIRE_PICKUP
+        
         return self.advance(task)
 
     def advance(self, task: TransportItemTask) -> list[ExecutionCommand]:
@@ -57,7 +59,9 @@ class TransportTaskBtRunner:
 
         if task.robot_id is None:
             return []
-        result = self.tree.tick(TransportTaskContext(task, self.world, self.execution))
+        
+        result = self.tree.tick(TransportTaskContext(task, self.world, self.execution_manager))
+        
         return result.commands
 
     def handle_command_succeeded(
@@ -121,7 +125,7 @@ class RequestResourceAccess(BtNode):
 
         purpose = self.endpoint
         task.phase = self._acquire_phase()
-        decision = ctx.world.resources_manager.request_access(
+        decision = ctx.world.resource_manager.request_access(
             resource_id,
             task.robot_id,
             purpose,
@@ -236,7 +240,7 @@ class MoveTo(BtNode):
 
         task.status = MissionTaskStatus.RUNNING
         
-        command = ctx.execution.create_move(task.task_id, task.robot_id, target)
+        command = ctx.execution_manager.create_move(task.task_id, task.robot_id, target)
         
         task.active_command_id = command.command_id
         
@@ -268,7 +272,7 @@ class HandleItem(BtNode):
 
         task.phase = self.phase
         task.status = MissionTaskStatus.RUNNING
-        command = ctx.execution.create_handling(
+        command = ctx.execution_manager.create_handling(
             task.task_id,
             task.robot_id,
             task.item_id,
@@ -293,7 +297,7 @@ class MarkResourceOccupied(BtNode):
         if resource_id not in ctx.world.resources or not task.bt_blackboard.get(acquired_key):
             return BtResult(BtStatus.SUCCESS)
 
-        ctx.world.resources_manager.occupy(resource_id, task.robot_id)
+        ctx.world.resource_manager.occupy(resource_id, task.robot_id)
         return BtResult(BtStatus.SUCCESS)
 
 
@@ -314,9 +318,9 @@ class UpdateResourceAfterHandling(BtNode):
             return BtResult(BtStatus.SUCCESS)
 
         if self.handling_type == "load":
-            ctx.world.resources_manager.release_item(resource_id, task.item_id)
+            ctx.world.resource_manager.release_item(resource_id, task.item_id)
         elif self.handling_type == "unload":
-            ctx.world.resources_manager.buffer_item(resource_id, task.item_id)
+            ctx.world.resource_manager.buffer_item(resource_id, task.item_id)
         return BtResult(BtStatus.SUCCESS)
 
 
@@ -356,7 +360,7 @@ class ReleaseResourceIfManaged(BtNode):
         if resource_id not in ctx.world.resources or not task.bt_blackboard.get(acquired_key):
             return BtResult(BtStatus.SUCCESS)
 
-        ctx.world.resources_manager.release(resource_id, task.robot_id)
+        ctx.world.resource_manager.release(resource_id, task.robot_id)
         task.bt_blackboard[acquired_key] = False
         return BtResult(BtStatus.SUCCESS)
 

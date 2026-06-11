@@ -5,11 +5,8 @@ from .world import MissionWorld
 class TransportTaskScheduler:
     """Selects the next pending transport task that can make progress."""
 
-    def next_ready_task(
-        self,
-        tasks: dict[str, TransportItemTask],
-        world: MissionWorld,
-    ) -> TransportItemTask | None:
+    def next_ready_task( self, tasks: dict[str, TransportItemTask], 
+                        world: MissionWorld,) -> TransportItemTask | None:
         """Return the first pending task whose robot, package, and pickup are ready."""
 
         for task_id in sorted(tasks):
@@ -34,9 +31,7 @@ class TransportTaskScheduler:
             return task
         return None
 
-    def _can_wait_for_pickup(self, 
-                             task: TransportItemTask, 
-                             world: MissionWorld,) -> bool:
+    def _can_wait_for_pickup(self, task: TransportItemTask, world: MissionWorld,) -> bool:
         """Return whether the robot can pre-stage while waiting for pickup."""
 
         resource = world.resources.get(task.pickup)
@@ -53,9 +48,7 @@ class TransportTaskScheduler:
             and item.carried_by is not None
         )
 
-    def _managed_pickup_available(self, 
-                                  task: TransportItemTask, 
-                                  world: MissionWorld,) -> bool:
+    def _managed_pickup_available(self, task: TransportItemTask, world: MissionWorld,) -> bool:
         """Return whether a managed pickup resource is ready for this task."""
 
         resource = world.resources.get(task.pickup)

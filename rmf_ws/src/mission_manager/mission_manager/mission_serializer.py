@@ -48,7 +48,7 @@ def serialize_runtime_mission_state(mission_manager, adapter=None, node_debug=No
     )
     active_command_ids = [
         command.command_id
-        for command in mission_manager.execution.commands.values()
+        for command in mission_manager.execution_manager.commands.values()
         if command.status
         not in (
             ExecutionCommandStatus.SUCCEEDED,
@@ -97,8 +97,8 @@ def serialize_runtime_mission_state(mission_manager, adapter=None, node_debug=No
     adapter_debug = {}
     if adapter is not None:
         adapter_debug = {
-            "pending_request_ids": list(adapter.pending_commands.keys()),
-            "active_rmf_task_ids": list(adapter.command_context_by_rmf_task_id.keys()),
+            "pending_request_ids": list(adapter.command_id_by_request_id.keys()),
+            "active_rmf_task_ids": list(adapter.command_id_by_rmf_task_id.keys()),
             "completed_task_ids": list(adapter.completed_rmf_task_ids),
         }
 
@@ -113,7 +113,7 @@ def serialize_runtime_mission_state(mission_manager, adapter=None, node_debug=No
         "transfer": _json_value(transfer),
         "mission_tasks": _json_value(runtime.tasks),
         "resources": _json_value(world.resources),
-        "execution_commands": _json_value(mission_manager.execution.commands),
+        "execution_commands": _json_value(mission_manager.execution_manager.commands),
         "operator": {
             "active_command_count": len(active_command_ids),
             "blocked_task_count": sum(
