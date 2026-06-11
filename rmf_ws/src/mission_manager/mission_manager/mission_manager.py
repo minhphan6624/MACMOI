@@ -3,11 +3,12 @@ from dataclasses import dataclass
 from .execution import ExecutionCommand, ExecutionManager
 from .mission_definition import (
     DESTINATION_WAYPOINT,
+    DOWNSTREAM_WAIT_WAYPOINT,
     DOWNSTREAM_HOME_WAYPOINT,
     DOWNSTREAM_ROBOT,
     SOURCE_WAYPOINT,
-    STAGING_WAYPOINT,
     TRANSFER_WAYPOINT,
+    UPSTREAM_WAIT_WAYPOINT,
     UPSTREAM_HOME_WAYPOINT,
     UPSTREAM_ROBOT,
 )
@@ -80,7 +81,10 @@ class MissionManager:
                     resource_type=ResourceType.TRANSFER_ZONE,
                     robot_capacity=1,
                     package_capacity=1,
-                    wait_waypoint=STAGING_WAYPOINT,
+                    wait_waypoints={
+                        upstream_robot: UPSTREAM_WAIT_WAYPOINT,
+                        downstream_robot: DOWNSTREAM_WAIT_WAYPOINT,
+                    },
                 )
             },
         )

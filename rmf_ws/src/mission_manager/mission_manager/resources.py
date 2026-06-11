@@ -55,6 +55,7 @@ class ResourceState:
     robot_capacity: int = 1
     package_capacity: int = 0
     wait_waypoint: str | None = None
+    wait_waypoints: dict[str, str] = field(default_factory=dict)
     robot_occupancy: list[str] = field(default_factory=list)
     package_occupancy: list[str] = field(default_factory=list)
     active_lease: ResourceLease | None = None

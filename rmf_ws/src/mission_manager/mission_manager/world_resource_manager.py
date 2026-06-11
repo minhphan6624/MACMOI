@@ -38,10 +38,11 @@ class WorldResourceManager:
         resource = self.resources[resource_id]
 
         def wait(reason: str, blocked_by: str | None = None) -> ResourceAccessDecision:
-            if resource.wait_waypoint is not None:
+            wait_waypoint = self._wait_waypoint(resource, actor_id)
+            if wait_waypoint is not None:
                 return ResourceAccessDecision(
                     ResourceAccessStatus.WAIT,
-                    resource.wait_waypoint,
+                    wait_waypoint,
                     reason,
                     blocked_by,
                 )
@@ -77,8 +78,12 @@ class WorldResourceManager:
                 self._grant_lease(resource, actor_id, purpose, item_id, task_id)
                 return ResourceAccessDecision(ResourceAccessStatus.GRANTED, resource_id)
             return wait("PACKAGE_NOT_AVAILABLE", item_id)
+
         self._grant_lease(resource, actor_id, purpose, item_id, task_id)
         return ResourceAccessDecision(ResourceAccessStatus.GRANTED, resource_id)
+
+    def _wait_waypoint(self, resource: ResourceState, actor_id: str) -> str | None:
+        return resource.wait_waypoints.get(actor_id) or resource.wait_waypoint
 
     def _grant_lease(
         self,
@@ -116,7 +121,7 @@ class WorldResourceManager:
             item_id=item_id,
         )
         self.resources[resource_id].reservations[reservation_id] = reservation
-        
+
         return reservation
 
     def occupy(self, resource_id: str, actor_id: str) -> None:

@@ -32,7 +32,7 @@ class MissionManagerNode(Node):
         self.declare_parameter("fleet_states_topic", "fleet_states")
         self.declare_parameter("mission_state_topic", "mission_state")
         self.declare_parameter("mission_commands_topic", "mission_commands")
-        self.declare_parameter("enable_fleet_state_completion_fallback", False)
+        self.declare_parameter("enable_fleet_state_completion_fallback", True)
 
         mission_id = self.get_parameter("mission_id").value
         total_packages = self.get_parameter("total_packages").value
@@ -173,6 +173,9 @@ class MissionManagerNode(Node):
                     "rmf_task_id": rmf_task_id,
                     "source": "fleet_state",
                 }
+            )
+            self.get_logger().info(
+                f"Mission command completed from fleet state: {completed_command_id}"
             )
             commands.extend(self.mission_manager.complete_command(completed_command_id))
 
