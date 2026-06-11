@@ -4,14 +4,6 @@ from enum import Enum
 # Classes for resource-related states/attributes 
 # In this case, resources are constraint-zones
 
-class ResourceAccessStatus(Enum):
-    """Result of a request to use a managed mission resource."""
-
-    GRANTED = "GRANTED"
-    WAIT = "WAIT"
-    BLOCKED = "BLOCKED"
-
-
 @dataclass
 class ResourceLease:
     """Temporary permission for one actor to use a managed resource."""
@@ -21,16 +13,6 @@ class ResourceLease:
     actor_id: str
     purpose: str
     item_id: str | None = None
-
-
-@dataclass
-class ResourceAccessDecision:
-    """Resource access response with optional wait/block explanation."""
-
-    status: ResourceAccessStatus
-    target: str | None = None
-    reason: str | None = None
-    blocked_by: str | None = None
 
 
 @dataclass
@@ -53,3 +35,20 @@ class ResourceState:
     @property
     def package_slots_available(self) -> int:
         return self.package_capacity - len(self.package_occupancy)
+
+# ----- Access-related classes -----
+class ResourceAccessStatus(Enum):
+    """Result of a request to use a managed mission resource."""
+
+    GRANTED = "GRANTED"
+    WAIT = "WAIT"
+    BLOCKED = "BLOCKED"
+
+@dataclass
+class ResourceAccessDecision:
+    """Resource access response with optional wait/block explanation."""
+
+    status: ResourceAccessStatus
+    target: str | None = None
+    reason: str | None = None
+    blocked_by: str | None = None
