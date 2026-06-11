@@ -197,12 +197,7 @@ The current implementation considers a robot clear of transfer when the BT
 releases the transfer resource. There is no independent physical check that the
 robot is outside the transfer conflict area.
 
-Issue:
-
-```text
-Transfer robot occupancy can be released too late or too broadly because it is
-controlled by task step ordering rather than explicit transfer clearance.
-```
+Issue: Transfer robot occupancy can be released too late or too broadly because it is controlled by task step ordering rather than explicit transfer clearance. This means sometimes the zone is only released when a robot is at ITS DESTINATION, which is later than expected
 
 Recommended short-term fix:
 
@@ -349,13 +344,7 @@ when package is buffered and transfer is available:
   robot2 continues to destination
 ```
 
-The goal is to move from:
-
-```text
-robot tried transfer, got WAIT, moved to staging
-```
-
-to:
+The goal is to move from "robot tried transfer, got WAIT, moved to staging" to
 
 ```text
 robot is waiting at staging because transfer/package state blocks its lease;
