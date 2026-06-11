@@ -128,6 +128,7 @@ class MissionManagerNode(Node):
         self.active_handling_timers = []
         self.last_event = None
         self.last_action = None
+        self.observed_fleet_task_ids = set()
         self.enable_fleet_state_completion_fallback = bool(
             self.get_parameter("enable_fleet_state_completion_fallback").value
         )
@@ -193,14 +194,20 @@ class MissionManagerNode(Node):
             if fleet_robot is None:
                 continue
 
+            if fleet_robot.task_id == rmf_task_id:
+                self.observed_fleet_task_ids.add(rmf_task_id)
+
             mode = fleet_robot.mode
             if mode.mode == mode.MODE_MOVING:
                 continue
 
             completion_source = None
+            if fleet_robot.task_id == rmf_task_id:
+                continue
+
             if self._robot_reached_command_target(fleet_robot, command):
                 completion_source = "fleet_state_target_pose"
-            elif fleet_robot.task_id != rmf_task_id:
+            elif rmf_task_id in self.observed_fleet_task_ids:
                 completion_source = "fleet_state_task_id"
 
             if completion_source is None:
@@ -211,6 +218,7 @@ class MissionManagerNode(Node):
             )
             if completed_command_id is None:
                 continue
+            self.observed_fleet_task_ids.discard(rmf_task_id)
             commands.extend(
                 self._complete_execution_command(
                     completed_command_id,
