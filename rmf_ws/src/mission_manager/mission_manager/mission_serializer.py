@@ -73,6 +73,11 @@ def serialize_runtime_mission_state(mission_manager, adapter=None, node_debug=No
 
     transfer_resource = world.resources.get(TRANSFER_WAYPOINT)
     transfer = {
+        "active_lease": (
+            _json_value(transfer_resource.active_lease)
+            if transfer_resource is not None
+            else None
+        ),
         "robot_occupancy": (
             transfer_resource.robot_occupancy[0]
             if transfer_resource is not None and transfer_resource.robot_occupancy

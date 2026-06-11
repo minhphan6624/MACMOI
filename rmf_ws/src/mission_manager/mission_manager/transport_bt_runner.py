@@ -1,6 +1,12 @@
 from .behavior_tree import BtNode, BtResult, BtStatus, MemorySequence, TransportTaskContext
 from .execution import ExecutionCommand, ExecutionCommandType, ExecutionManager
-from .mission_definition import TRANSFER_WAYPOINT
+from .mission_definition import (
+    DOWNSTREAM_ROBOT,
+    TRANSFER_DOWNSTREAM_EXIT_WAYPOINT,
+    TRANSFER_UPSTREAM_EXIT_WAYPOINT,
+    TRANSFER_WAYPOINT,
+    UPSTREAM_ROBOT,
+)
 from .mission_tasks import MissionTaskStatus, TransportItemTask, TransportTaskPhase
 from .resources import ResourceAccessStatus
 from .world import RuntimeWorld, WorldRobotStatus
@@ -14,15 +20,21 @@ class TransportTaskBtRunner:
             "transport_item",
             [
                 AssignRobot(),
+                ApproachResourceIfManaged("pickup"),
                 RequestResourceAccess("pickup"),
                 MoveTo("pickup", TransportTaskPhase.MOVE_TO_PICKUP),
+                MarkResourceOccupied("pickup"),
                 HandleItem("load", TransportTaskPhase.LOAD_ITEM),
-                ReleasePickupItemIfManaged(),
+                UpdateResourceAfterHandling("pickup", "load"),
+                VacateResourceIfManaged("pickup"),
+                ReleaseResourceIfManaged("pickup"),
+                ApproachResourceIfManaged("dropoff"),
                 RequestResourceAccess("dropoff"),
                 MoveTo("dropoff", TransportTaskPhase.MOVE_TO_DROPOFF),
-                ReleaseResourceOccupancyIfManaged("pickup"),
+                MarkResourceOccupied("dropoff"),
                 HandleItem("unload", TransportTaskPhase.UNLOAD_ITEM),
-                VacateDropoffIfNeeded(),
+                UpdateResourceAfterHandling("dropoff", "unload"),
+                VacateResourceIfManaged("dropoff"),
                 ReleaseResourceIfManaged("dropoff"),
                 ReleaseRobot(),
                 MarkTaskSucceeded(),
@@ -95,33 +107,37 @@ class RequestResourceAccess(BtNode):
             task.robot_id,
             purpose,
             task.item_id,
+            task.task_id,
         )
         if decision.status == ResourceAccessStatus.WAIT:
-            return self._wait_at_resource_waypoint(ctx, decision.target)
+            return self._wait_at_resource_waypoint(ctx, decision)
         if decision.status != ResourceAccessStatus.GRANTED:
             task.status = MissionTaskStatus.BLOCKED
             task.waiting_resource_id = resource_id
             task.waiting_purpose = purpose
+            self._set_blocked_details(ctx, decision)
             ctx.world.mark_robot_waiting(task.robot_id, task.task_id)
             return BtResult(BtStatus.RUNNING)
 
-        ctx.world.occupy_resource(resource_id, task.robot_id)
         ctx.world.assign_robot(task.robot_id, task.task_id)
         task.bt_blackboard[acquired_key] = True
         task.waiting_resource_id = None
         task.waiting_purpose = None
+        self._clear_blocked_details(task)
         task.status = MissionTaskStatus.RUNNING
         return BtResult(BtStatus.SUCCESS)
 
     def _wait_at_resource_waypoint(
         self,
         ctx: TransportTaskContext,
-        wait_waypoint: str | None,
+        decision,
     ) -> BtResult:
         task = ctx.task
         resource_id = getattr(task, self.endpoint)
+        wait_waypoint = transfer_side_waypoint(task.robot_id) or decision.target
         task.waiting_resource_id = resource_id
         task.waiting_purpose = self.endpoint
+        self._set_blocked_details(ctx, decision)
         if wait_waypoint is None:
             task.status = MissionTaskStatus.BLOCKED
             ctx.world.mark_robot_waiting(task.robot_id, task.task_id)
@@ -139,6 +155,41 @@ class RequestResourceAccess(BtNode):
         if self.endpoint == "pickup":
             return TransportTaskPhase.ACQUIRE_PICKUP
         return TransportTaskPhase.ACQUIRE_DROPOFF
+
+    def _set_blocked_details(self, ctx: TransportTaskContext, decision) -> None:
+        task = ctx.task
+        task.blocked_reason = decision.reason
+        task.blocked_by = decision.blocked_by
+        task.waiting_at = decision.target
+        task.unblock_condition = self._unblock_condition(decision.reason)
+        task.next_expected_event = self._next_expected_event(decision.reason)
+
+    def _clear_blocked_details(self, task: TransportItemTask) -> None:
+        task.blocked_reason = None
+        task.blocked_by = None
+        task.waiting_at = None
+        task.unblock_condition = None
+        task.next_expected_event = None
+
+    def _unblock_condition(self, reason: str | None) -> str | None:
+        if reason == "PACKAGE_NOT_AVAILABLE":
+            return "package buffered at transfer"
+        if reason == "TRANSFER_PACKAGE_FULL":
+            return "package removed from transfer buffer"
+        if reason in ("TRANSFER_ROBOT_OCCUPIED", "WAITING_FOR_TRANSFER_LEASE"):
+            return "transfer robot occupancy and lease released"
+        return None
+
+    def _next_expected_event(self, reason: str | None) -> str | None:
+        if reason == "PACKAGE_NOT_AVAILABLE":
+            return "upstream robot unloads package at transfer"
+        if reason == "TRANSFER_PACKAGE_FULL":
+            return "downstream robot loads package from transfer"
+        if reason == "TRANSFER_ROBOT_OCCUPIED":
+            return "robot exits transfer"
+        if reason == "WAITING_FOR_TRANSFER_LEASE":
+            return "active transfer lease released"
+        return None
 
 
 class MoveTo(BtNode):
@@ -192,28 +243,76 @@ class HandleItem(BtNode):
         return BtResult(BtStatus.RUNNING, [command])
 
 
-class VacateDropoffIfNeeded(BtNode):
-    def __init__(self):
-        self.move_to_pickup_side = MoveTo("pickup", TransportTaskPhase.MOVE_TO_PICKUP)
+class ApproachResourceIfManaged(BtNode):
+    def __init__(self, endpoint: str):
+        self.endpoint = endpoint
 
-    def tick(self, ctx: TransportTaskContext) -> BtResult:
-        if ctx.task.dropoff != TRANSFER_WAYPOINT:
-            return BtResult(BtStatus.SUCCESS)
-        return self.move_to_pickup_side.tick(ctx)
-
-
-class ReleasePickupItemIfManaged(BtNode):
     def tick(self, ctx: TransportTaskContext) -> BtResult:
         task = ctx.task
-        resource_id = task.pickup
-        if resource_id not in ctx.world.resources or not task.bt_blackboard.get("pickup_resource_acquired"):
+        resource_id = getattr(task, self.endpoint)
+        if resource_id not in ctx.world.resources:
             return BtResult(BtStatus.SUCCESS)
 
-        ctx.world.release_item(resource_id, task.item_id)
+        approach_waypoint = transfer_side_waypoint(task.robot_id)
+        if approach_waypoint is None:
+            return BtResult(BtStatus.SUCCESS)
+        return MoveTo(approach_waypoint, TransportTaskPhase.MOVE_TO_TRANSFER_EXIT).tick(ctx)
+
+
+class MarkResourceOccupied(BtNode):
+    def __init__(self, endpoint: str):
+        self.endpoint = endpoint
+
+    def tick(self, ctx: TransportTaskContext) -> BtResult:
+        task = ctx.task
+        resource_id = getattr(task, self.endpoint)
+        acquired_key = f"{self.endpoint}_resource_acquired"
+        if resource_id not in ctx.world.resources or not task.bt_blackboard.get(acquired_key):
+            return BtResult(BtStatus.SUCCESS)
+
+        ctx.world.occupy_resource(resource_id, task.robot_id)
         return BtResult(BtStatus.SUCCESS)
 
 
-class ReleaseResourceOccupancyIfManaged(BtNode):
+class UpdateResourceAfterHandling(BtNode):
+    def __init__(self, endpoint: str, handling_type: str):
+        self.endpoint = endpoint
+        self.handling_type = handling_type
+
+    def tick(self, ctx: TransportTaskContext) -> BtResult:
+        task = ctx.task
+        resource_id = getattr(task, self.endpoint)
+        acquired_key = f"{self.endpoint}_resource_acquired"
+        if resource_id not in ctx.world.resources or not task.bt_blackboard.get(acquired_key):
+            return BtResult(BtStatus.SUCCESS)
+
+        if self.handling_type == "load":
+            ctx.world.release_item(resource_id, task.item_id)
+        elif self.handling_type == "unload":
+            ctx.world.buffer_item(resource_id, task.item_id)
+        return BtResult(BtStatus.SUCCESS)
+
+
+class VacateResourceIfManaged(BtNode):
+    def __init__(self, endpoint: str):
+        self.endpoint = endpoint
+
+    def tick(self, ctx: TransportTaskContext) -> BtResult:
+        task = ctx.task
+        resource_id = getattr(task, self.endpoint)
+        if resource_id not in ctx.world.resources:
+            return BtResult(BtStatus.SUCCESS)
+
+        exit_waypoint = self._exit_waypoint(task.robot_id)
+        if exit_waypoint is None:
+            return BtResult(BtStatus.SUCCESS)
+        return MoveTo(exit_waypoint, TransportTaskPhase.MOVE_TO_TRANSFER_EXIT).tick(ctx)
+
+    def _exit_waypoint(self, robot_id: str) -> str | None:
+        return transfer_side_waypoint(robot_id)
+
+
+class ReleaseResourceIfManaged(BtNode):
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
 
@@ -229,21 +328,6 @@ class ReleaseResourceOccupancyIfManaged(BtNode):
         return BtResult(BtStatus.SUCCESS)
 
 
-class ReleaseResourceIfManaged(BtNode):
-    def __init__(self, endpoint: str):
-        self.endpoint = endpoint
-
-    def tick(self, ctx: TransportTaskContext) -> BtResult:
-        task = ctx.task
-        resource_id = getattr(task, self.endpoint)
-        if resource_id not in ctx.world.resources:
-            return BtResult(BtStatus.SUCCESS)
-
-        if self.endpoint == "dropoff":
-            ctx.world.buffer_item(resource_id, task.item_id)
-        return ReleaseResourceOccupancyIfManaged(self.endpoint).tick(ctx)
-
-
 class ReleaseRobot(BtNode):
     def tick(self, ctx: TransportTaskContext) -> BtResult:
         ctx.world.release_robot(ctx.task.robot_id)
@@ -255,3 +339,11 @@ class MarkTaskSucceeded(BtNode):
         ctx.task.phase = TransportTaskPhase.DONE
         ctx.task.status = MissionTaskStatus.SUCCEEDED
         return BtResult(BtStatus.SUCCESS)
+
+
+def transfer_side_waypoint(robot_id: str) -> str | None:
+    if robot_id == UPSTREAM_ROBOT:
+        return TRANSFER_UPSTREAM_EXIT_WAYPOINT
+    if robot_id == DOWNSTREAM_ROBOT:
+        return TRANSFER_DOWNSTREAM_EXIT_WAYPOINT
+    return None

@@ -32,6 +32,7 @@ class MissionManagerNode(Node):
         self.declare_parameter("fleet_states_topic", "fleet_states")
         self.declare_parameter("mission_state_topic", "mission_state")
         self.declare_parameter("mission_commands_topic", "mission_commands")
+        self.declare_parameter("enable_fleet_state_completion_fallback", False)
 
         mission_id = self.get_parameter("mission_id").value
         total_packages = self.get_parameter("total_packages").value
@@ -95,6 +96,9 @@ class MissionManagerNode(Node):
         self.active_handling_timers = []
         self.last_event = None
         self.last_action = None
+        self.enable_fleet_state_completion_fallback = bool(
+            self.get_parameter("enable_fleet_state_completion_fallback").value
+        )
 
         if self.get_parameter("auto_start").value:
             self._record_event({"command": "auto_start", "mission_id": mission_id})
@@ -137,6 +141,9 @@ class MissionManagerNode(Node):
 
     def _handle_fleet_state(self, msg: FleetState) -> None:
         if msg.name != FLEET_NAME:
+            return
+        if not self.enable_fleet_state_completion_fallback:
+            self._publish_mission_state()
             return
 
         commands = []

@@ -48,6 +48,18 @@ Recommended fix:
 - make waiting policy configurable instead of treating `staging` as only a
   hardcoded waypoint
 
+Related issue:
+
+```text
+staging is only a waypoint today, not a capacity-aware resource
+```
+
+If both robots are sent to the same staging waypoint, the mission layer does not
+currently prevent both from targeting or occupying it. This can cause staging
+conflicts during live runs. The transfer fix below should be handled first; a
+later staging fix should add directional staging waypoints or model staging as a
+managed resource with capacity.
+
 Useful blocked reasons:
 
 ```text
@@ -197,15 +209,23 @@ The current implementation considers a robot clear of transfer when the BT
 releases the transfer resource. There is no independent physical check that the
 robot is outside the transfer conflict area.
 
-Issue: Transfer robot occupancy can be released too late or too broadly because it is controlled by task step ordering rather than explicit transfer clearance. This means sometimes the zone is only released when a robot is at ITS DESTINATION, which is later than expected
+Issue:
+
+```text
+Transfer robot occupancy can be released too late or too broadly because it is
+controlled by task step ordering rather than explicit transfer clearance.
+```
+
+For example, downstream pickup can currently hold the transfer zone until the
+robot reaches its final destination, which is later than necessary.
 
 Recommended short-term fix:
 
 Add explicit transfer exit waypoints:
 
 ```text
-transfer_upstream_exit
-transfer_downstream_exit
+upstream_exit
+downstream_exit
 ```
 
 Then release transfer robot occupancy only after the robot reaches the relevant

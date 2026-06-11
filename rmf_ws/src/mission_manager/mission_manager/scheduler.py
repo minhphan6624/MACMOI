@@ -12,24 +12,23 @@ class TransportTaskScheduler:
                 continue
             if not world.is_robot_available(task.robot_id):
                 continue
-            if not world.is_item_at(task.item_id, task.pickup) and not self._can_wait_for_pickup(
-                task,
-                world,
-            ):
+            if not world.is_item_at(task.item_id, task.pickup):
+                continue
+            if not self._managed_pickup_available(task, world):
                 continue
             return task
         return None
 
-    def _can_wait_for_pickup(
+    def _managed_pickup_available(
         self,
         task: TransportItemTask,
         world: RuntimeWorld,
     ) -> bool:
         resource = world.resources.get(task.pickup)
-        item = world.items.get(task.item_id)
+        if resource is None:
+            return True
         return (
-            resource is not None
-            and resource.wait_waypoint is not None
-            and item is not None
-            and item.carried_by is not None
+            resource.active_lease is None
+            and resource.robot_slots_available > 0
+            and task.item_id in resource.package_occupancy
         )
