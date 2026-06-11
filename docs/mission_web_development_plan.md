@@ -149,3 +149,100 @@ current transfer occupancy/buffer state
 ```
 
 This is important because the mission layer currently has no dedicated UI and only minimal ROS logs.
+
+---
+
+## 6. Future: Persistent Run Records, Rosbags, and AI-Ready Exports
+
+The current RMF web API already has a database layer for operational entities
+such as task states, task logs, alerts, and scheduled tasks. For a lab system,
+that storage should be treated as the start of a broader experiment record, not
+as a replacement for live ROS/RMF state.
+
+The live dashboard should continue to observe live RMF/ROS updates. Persistent
+storage should be used for history, audit, artifact tracking, and later offline
+analysis.
+
+Suggested responsibilities:
+
+```text
+database:
+  mission/run metadata
+  task history
+  alert history
+  operator actions
+  artifact metadata
+
+filesystem or object storage:
+  rosbag files
+  compressed ROS logs
+  exported JSON bundles
+  screenshots or reports
+
+API server:
+  list/search run records
+  start/stop recording requests
+  expose artifact download endpoints
+  build export bundles for later analysis
+```
+
+Avoid storing large rosbag binaries directly in the SQL database. Store the file
+path, size, checksum, topic list, time range, and related mission/run ID in the
+database, while keeping the bag files on disk or object storage.
+
+Possible future backend shape:
+
+```text
+mission_run:
+  id
+  mission_id
+  started_at
+  ended_at
+  status
+  map_name
+  robot_names
+  software_commit
+  notes
+
+artifact:
+  id
+  run_id
+  type: rosbag | ros_log | api_log | mission_export | screenshot
+  path
+  size_bytes
+  sha256
+  topics
+  start_time
+  end_time
+  created_at
+```
+
+Possible API endpoints:
+
+```text
+GET  /runs
+GET  /runs/{run_id}
+GET  /runs/{run_id}/artifacts
+GET  /artifacts/{artifact_id}/download
+POST /recordings/start
+POST /recordings/stop
+POST /runs/{run_id}/export
+```
+
+For AI-agent processing, prefer a self-contained export bundle rather than a
+raw database dump:
+
+```text
+run_manifest.json
+mission_state_timeline.json
+task_states.json
+alerts.json
+operator_actions.json
+rosbag/
+logs/
+```
+
+A practical first implementation step is to move the API server away from the
+default in-memory SQLite configuration, confirm task states and logs survive a
+restart, then add `mission_run` and `artifact` records before adding rosbag
+recording controls.

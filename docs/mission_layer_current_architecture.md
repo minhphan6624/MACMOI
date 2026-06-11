@@ -1,11 +1,20 @@
 # Mission Layer Current Architecture
 
 This document describes the current `mission_manager` implementation. The
-mission layer is a small task orchestration system around package transport,
-runtime world state, resource access, behavior-tree task execution, and an RMF
-movement adapter.
+system is a centralized mission-control layer above Open-RMF / Free Fleet:
 
-The active mission is still the two-robot handoff:
+```text
+Central mission layer:
+  package workflow, robot roles, transfer resource rules, mission state
+
+Open-RMF / Free Fleet:
+  traffic-aware waypoint execution, fleet state, Nav2 command dispatch
+
+Robot PCs:
+  TurtleBot3 hardware, localization, Nav2, Zenoh ROS 2 bridge
+```
+
+The active mission is a fixed two-robot handoff:
 
 ```text
 source -> transfer -> destination
@@ -14,8 +23,8 @@ tb3_1 moves packages from source to transfer
 tb3_2 moves packages from transfer to destination
 ```
 
-The old fixed mission FSM path has been removed from the active runtime. The
-current implementation represents the handoff as transport task instances.
+The mission layer treats this as transport task instances rather than a single
+large fixed FSM.
 
 ---
 
@@ -30,7 +39,7 @@ MissionManagerNode
   -> TransportTaskBtRunner
   -> ExecutionManager
   -> RmfExecutionAdapter / handling timer
-  -> command completion
+  -> execution completion
   -> MissionManager
 ```
 
@@ -38,7 +47,7 @@ The main split is:
 
 ```text
 MissionManagerNode:
-  ROS I/O, timers, RMF subscriptions, mission_state publication
+  ROS I/O, RMF subscriptions, execution-result subscriptions, mission_state publication
 
 MissionManager:
   mission lifecycle, task coordination, command completion handling
@@ -53,7 +62,7 @@ RuntimeWorld:
   mission-layer belief about robots, items, and resources
 
 WorldResourceManager:
-  resource access decisions, occupancy, and transfer package buffering
+  resource access, transfer leases, occupancy, and package buffering
 
 ExecutionManager:
   creates and tracks execution commands
@@ -65,14 +74,14 @@ RmfExecutionAdapter:
 Source map:
 
 ```text
-mission_manager_node.py       ROS node, topics, timers, RMF subscriptions
-mission_manager.py               mission lifecycle and task coordination
+mission_manager_node.py       ROS node, topics, timers, RMF/free_fleet callbacks
+mission_manager.py            mission lifecycle and task coordination
 mission_tasks.py              mission/task status and transport task model
-scheduler.py                  deterministic ready-task selection
+scheduler.py                  deterministic ready-task selection and pre-staging
 behavior_tree.py              minimal BT primitives
 transport_bt_runner.py        transport task BT executor
 world.py                      robot/item/resource runtime state facade
-world_resource_manager.py     resource access and buffer rules
+world_resource_manager.py     transfer access, lease, occupancy, buffer rules
 resources.py                  resource state model
 execution.py                  execution command lifecycle
 rmf_execution_adapter.py      RMF task API adapter for movement commands
@@ -109,12 +118,49 @@ tb3_2.location = robot2_home
 P1.location = source
 transfer.robot_capacity = 1
 transfer.package_capacity = 1
-transfer.wait_waypoint = staging
+transfer.wait_waypoints = {
+  tb3_1: upstream_exit
+  tb3_2: downstream_exit
+}
 ```
 
-The transfer zone is the only managed resource in the default mission. It is
-managed at the mission layer for logical access control, while RMF still handles
-traffic planning and navigation execution.
+The transfer zone is the only managed mission resource. Directional exit
+waypoints double as safe wait/clear points:
+
+```text
+tb3_1 waits or clears at upstream_exit
+tb3_2 waits or clears at downstream_exit
+```
+
+There is still a `staging` waypoint in the map assets, but it is no longer part
+of the active mission logic.
+
+---
+
+## RMF Graph Semantics
+
+The active RMF navigation graph is intentionally constrained to the mission
+corridor:
+
+```text
+robot1_home <-> source
+source <-> upstream_exit
+upstream_exit <-> transfer      mutex: transfer_zone
+transfer <-> downstream_exit    mutex: transfer_zone
+downstream_exit <-> destination
+destination <-> robot2_home
+```
+
+Only the lanes that enter or leave the transfer conflict area use the
+`transfer_zone` mutex:
+
+```text
+upstream_exit <-> transfer
+transfer <-> downstream_exit
+```
+
+The mission layer decides which robot may use transfer. RMF graph design and
+mutexes help the physical movement respect that decision.
 
 ---
 
@@ -129,14 +175,6 @@ mission_id
 mission status
 transport task instances
 RuntimeWorld
-```
-
-The mission manager owns:
-
-```text
-TransportTaskScheduler
-TransportTaskBtRunner
-ExecutionManager
 ```
 
 Main behavior:
@@ -159,8 +197,8 @@ complete_command(command_id)
   optionally start another ready task
 ```
 
-The mission manager does not publish ROS messages or RMF requests directly. It only
-returns `ExecutionCommand` objects.
+The mission manager does not publish ROS messages or RMF requests directly. It
+returns `ExecutionCommand` objects to the ROS node.
 
 ---
 
@@ -175,13 +213,14 @@ task.status == PENDING
 task.robot_id is assigned
 assigned robot is IDLE
 item is physically at task.pickup
+managed pickup resource is available
 ```
 
-There is one exception: a task may start early if its pickup is a managed
-resource with a wait waypoint and the item is currently being carried. This is
-used for downstream pickup at `transfer`: `tb3_2` can move to `staging` while
-`tb3_1` is carrying the package toward transfer, but it should not enter
-transfer until the resource manager grants pickup access.
+There is one pre-staging exception: a task may start early if its pickup is a
+managed resource with a robot-specific wait waypoint and the item is currently
+being carried. This lets `tb3_2` move to `downstream_exit` while `tb3_1` is
+carrying the package toward transfer, but `tb3_2` still cannot enter transfer
+until the resource manager grants pickup access.
 
 The scheduler is deterministic and simple. It sorts task IDs and picks the first
 eligible task.
@@ -199,21 +238,21 @@ MemorySequence transport_item
   AssignRobot
   RequestResourceAccess(pickup)
   MoveTo(pickup)
+  MarkResourceOccupied(pickup)
   HandleItem(load)
-  ReleasePickupItemIfManaged
+  UpdateResourceAfterHandling(pickup, load)
+  VacateResourceIfManaged(pickup)
+  ReleaseResourceIfManaged(pickup)
   RequestResourceAccess(dropoff)
   MoveTo(dropoff)
-  ReleaseResourceOccupancyIfManaged(pickup)
+  MarkResourceOccupied(dropoff)
   HandleItem(unload)
-  VacateDropoffIfNeeded
+  UpdateResourceAfterHandling(dropoff, unload)
+  VacateResourceIfManaged(dropoff)
   ReleaseResourceIfManaged(dropoff)
   ReleaseRobot
   MarkTaskSucceeded
 ```
-
-The BT is intentionally small. `MemorySequence` stores the current child index
-in `task.bt_blackboard`, so each tick resumes from the current step instead of
-restarting from the beginning.
 
 The BT emits commands instead of executing work directly:
 
@@ -225,7 +264,7 @@ HandleItem(...)
   -> ExecutionCommand(HANDLE_ITEM)
 ```
 
-World state is updated only after command completion:
+World state is updated after command completion:
 
 ```text
 MOVE_ROBOT succeeded:
@@ -238,6 +277,23 @@ HANDLE_ITEM unload succeeded:
   world.unload_item(robot_id, item_id, task.dropoff)
 ```
 
+For managed resources, package and resource state changes happen near the
+physical event that justifies them:
+
+```text
+downstream load from transfer:
+  remove item from transfer buffer
+  move to downstream_exit
+  release transfer occupancy and lease
+  continue to destination
+
+upstream unload into transfer:
+  buffer item at transfer
+  move to upstream_exit
+  release transfer occupancy and lease
+  mark upstream task succeeded
+```
+
 ---
 
 ## Resource Access
@@ -248,11 +304,13 @@ Current transfer rules:
 
 ```text
 dropoff into transfer:
+  no other active lease holder
   robot slot must be available
   package slot must be available
   item_id must be present
 
 pickup from transfer:
+  no other active lease holder
   robot slot must be available
   requested item must already be buffered in transfer
 ```
@@ -262,38 +320,43 @@ If access is granted:
 ```text
 status = GRANTED
 target = transfer
+active_lease = robot / task / purpose / package
 ```
 
-If access is unavailable but the resource has a wait waypoint:
+If access is unavailable and the robot has a configured wait waypoint:
 
 ```text
 status = WAIT
-target = staging
+target = upstream_exit or downstream_exit
+reason = PACKAGE_NOT_AVAILABLE | TRANSFER_PACKAGE_FULL | TRANSFER_ROBOT_OCCUPIED | ...
 ```
 
-If access cannot be granted and no wait waypoint exists:
+If access cannot be granted and no wait target exists:
 
 ```text
 status = BLOCKED
 ```
 
-The BT handles `WAIT` by moving the robot to `staging`, marking the task as
-blocked, and retrying resource access on later ticks.
+The BT handles `WAIT` by moving the robot to its directional wait waypoint,
+marking the task as blocked, and retrying resource access when the mission
+advances.
 
 The resource state tracks:
 
 ```text
+active_lease
 robot_occupancy
 package_occupancy
+wait_waypoints
 reservations
 ```
 
-Reservations exist in the model but are not yet the main coordination mechanism.
-The current behavior primarily uses occupancy and transfer package buffering.
+Reservations still exist in the model, but `active_lease` plus occupancy is the
+current coordination mechanism.
 
 ---
 
-## ROS and RMF Boundary
+## ROS, RMF, And Execution Boundary
 
 `MissionManagerNode` is the ROS shell.
 
@@ -304,6 +367,7 @@ mission_commands
 task_api_responses
 task_summaries
 fleet_states
+mission_execution_results
 ```
 
 It publishes:
@@ -311,12 +375,14 @@ It publishes:
 ```text
 task_api_requests
 mission_state
+mission_execution_commands
 ```
 
 Command dispatch:
 
 ```text
 MOVE_ROBOT:
+  publish mission_execution_commands context
   RmfExecutionAdapter.submit_command(...)
   publish robot_task_request to task_api_requests
 
@@ -326,7 +392,16 @@ HANDLE_ITEM:
 ```
 
 `RmfExecutionAdapter` converts movement commands into RMF
-`robot_task_request` payloads. It tracks:
+`robot_task_request` payloads. Movement is currently requested as a composed
+`go_to_place` task:
+
+```text
+category = compose
+phase activity = go_to_place
+target waypoint = command.target
+```
+
+The adapter tracks:
 
 ```text
 request_id -> command_id
@@ -334,11 +409,42 @@ rmf_task_id -> command_id
 completed_rmf_task_ids
 ```
 
-When RMF reports a task completion, the node maps the RMF task ID back to the
-mission command ID and calls:
+---
+
+## Movement Completion Paths
+
+Movement completion can reach the mission manager through multiple paths.
+
+Primary path:
 
 ```text
-mission_manager.complete_command(command_id)
+MissionManagerNode publishes mission_execution_commands
+free_fleet Nav2 adapter attaches the command context to the next navigation goal
+Nav2 reports the goal succeeded
+free_fleet Nav2 adapter publishes mission_execution_results
+MissionManagerNode calls mission_manager.complete_command(command_id)
+```
+
+Fallback paths:
+
+```text
+task_summaries:
+  RMF task summary reports STATE_COMPLETED
+  mission node maps rmf_task_id -> command_id
+
+fleet_states:
+  robot is no longer moving and is at the command target
+  or robot.task_id no longer matches the tracked RMF task
+```
+
+The fallback paths remain because RMF task summaries and fleet state timing can
+vary during physical integration.
+
+Expected direct completion logs:
+
+```text
+Published mission execution result: {... "status": "SUCCEEDED", "source": "nav2_result" ...}
+Mission command completed from nav2_result: cmd_X
 ```
 
 ---
@@ -354,13 +460,7 @@ tb3_1.location = robot1_home
 tb3_2.location = robot2_home
 transfer.robot_occupancy = []
 transfer.package_occupancy = []
-```
-
-The operator starts the mission:
-
-```text
-MissionManagerNode
-  -> MissionManager.start()
+transfer.active_lease = None
 ```
 
 Normal one-package flow:
@@ -370,27 +470,29 @@ Normal one-package flow:
 2. tb3_1 moves to source.
 3. tb3_1 loads P1.
 4. tb3_1 requests transfer dropoff access.
-5. If transfer is free, tb3_1 moves to transfer.
-6. If transfer is blocked, tb3_1 moves to staging and waits.
+5. If transfer is free, tb3_1 moves to transfer via upstream_exit.
+6. If transfer is blocked, tb3_1 waits at upstream_exit with a blocked reason.
 7. tb3_1 unloads P1 at transfer.
 8. P1 is buffered in transfer.
-9. tb3_1 vacates transfer back toward source.
-10. P1:source_to_transfer succeeds.
-11. Scheduler starts or resumes P1:transfer_to_destination.
-12. tb3_2 requests transfer pickup access.
-13. If P1 is buffered and transfer robot slot is free, tb3_2 enters transfer.
-14. Otherwise tb3_2 waits at staging.
-15. tb3_2 loads P1.
-16. P1 is removed from transfer buffer.
-17. tb3_2 moves to destination.
-18. tb3_2 unloads P1.
-19. P1:transfer_to_destination succeeds.
-20. Mission completes when all transport tasks succeed.
+9. tb3_1 moves to upstream_exit.
+10. Transfer occupancy and lease are released.
+11. P1:source_to_transfer succeeds.
+12. Scheduler starts or resumes P1:transfer_to_destination.
+13. tb3_2 requests transfer pickup access.
+14. If P1 is buffered and transfer is free, tb3_2 enters transfer via downstream_exit.
+15. Otherwise tb3_2 waits at downstream_exit with a blocked reason.
+16. tb3_2 loads P1.
+17. P1 is removed from transfer buffer.
+18. tb3_2 moves to downstream_exit.
+19. Transfer occupancy and lease are released.
+20. tb3_2 moves to destination.
+21. tb3_2 unloads P1.
+22. P1:transfer_to_destination succeeds.
+23. Mission completes when all transport tasks succeed.
 ```
 
 Current mission completion does not explicitly send robots home. Return-home
-behavior is still expected from RMF/fleet adapter finishing behavior or should
-be added as explicit mission-layer behavior in a future change.
+behavior should be added as explicit mission-layer behavior if needed.
 
 ---
 
@@ -402,26 +504,27 @@ The mission layer controls logical mission rules:
 which task can start
 whether a robot may enter transfer
 whether a package is available for pickup
-which robot should wait at staging
+which directional wait point a robot should use
 when a task succeeds
 ```
 
 RMF controls traffic and navigation execution:
 
 ```text
-route planning
+route planning on the RMF graph
 traffic negotiation
 robot task execution
 fleet state reporting
+Nav2 command dispatch through free_fleet
 ```
 
 Those layers are complementary. RMF does not understand the package-transfer
-rule unless the mission layer, RMF mutexes, graph design, or task definitions
+rule unless the mission layer, RMF graph design, mutexes, or task definitions
 encode it.
 
-The current mission world is also optimistic: it updates robot and item state
-when commands are reported complete. It does not continuously verify physical
-robot pose or package handling state.
+The current mission world is still optimistic for package handling: it updates
+item state when simulated handling timers complete. It does not yet verify
+physical package pickup/dropoff.
 
 ---
 
@@ -437,17 +540,18 @@ TransportTaskBtRunner:
   richer task behavior, retry/recovery, alternative BT backend
 
 WorldResourceManager:
-  reservations, queues, stronger multi-robot resource arbitration
+  queues, stronger lease arbitration, timeouts
 
 RmfExecutionAdapter:
   cancellation, failure handling, richer RMF task types
 
 MissionManagerNode:
   replace handling timers with real robot/hardware confirmations
+  strengthen execution-result failure/cancellation handling
 
 MissionManager:
   explicit return-home behavior, pause/resume/abort semantics
 ```
 
-See `docs/mission_layer_strengthening_suggestions.md` for the recommended next
+See `docs/mission_layer_strengthening_suggestions.md` for recommended next
 improvements.

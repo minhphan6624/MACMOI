@@ -28,7 +28,7 @@ The mission layer should explicitly represent:
 - blocked tasks
 - waiting reasons
 - transfer-zone access
-- staging behavior
+- directional wait/clear behavior
 - recovery options
 - operator interventions
 
@@ -78,7 +78,7 @@ the mission layer a clear place to enforce rules such as:
 do not enter transfer if another robot is there
 do not enter transfer for pickup if no package is buffered there
 do not drop off if transfer already contains a package
-wait at staging when transfer access is unavailable
+wait at the robot's directional exit/wait point when transfer access is unavailable
 ```
 
 The BT runner also makes the transport workflow easier to inspect and extend
@@ -221,7 +221,7 @@ Example blocked-task state:
     "robot_id": "tb3_1",
     "resource_id": "transfer"
   },
-  "waiting_at": "staging",
+  "waiting_at": "downstream_exit",
   "unblock_condition": "P1 buffered at transfer and transfer robot slot available",
   "next_expected_event": "tb3_1 unloads P1 at transfer"
 }
@@ -236,7 +236,7 @@ tb3_2: waiting
 It should show:
 
 ```text
-tb3_2 is waiting at staging.
+tb3_2 is waiting at downstream_exit.
 Reason: P1 is not yet available at transfer.
 Blocked by: tb3_1 source_to_transfer.
 Next expected event: tb3_1 unloads P1 at transfer.
@@ -249,7 +249,7 @@ only being retried through broad orchestrator ticks:
 package buffered at transfer
 transfer robot occupancy released
 transfer package occupancy released
-robot reached staging
+robot reached its directional wait point
 ```
 
 This makes mission progression easier to reason about and gives the dashboard a
@@ -421,14 +421,14 @@ It should eventually consider:
 - queue position
 - estimated travel time
 - blocked duration
-- pre-staging opportunity
+- pre-positioning opportunity
 - battery level
 - operator priority
 
 This allows the mission layer to make better choices, such as:
 
 ```text
-send the downstream robot to staging before the package arrives
+send the downstream robot to `downstream_exit` before the package arrives
 prioritize a package with an earlier deadline
 delay a robot if the transfer queue is full
 assign a backup robot if the original robot fails
@@ -437,15 +437,15 @@ assign a backup robot if the original robot fails
 Waiting behavior should also be configurable per resource or mission profile:
 
 ```text
-wait_at = staging
+wait_at = directional_exit
 wait_at = home
 wait_at = current_position
 prestage_downstream = true/false
 ```
 
-For the lab handoff, pre-staging `tb3_2` can improve throughput if staging is
-near transfer and does not block the shared path. For other maps, waiting at
-home may be safer.
+For the lab handoff, pre-positioning `tb3_2` at `downstream_exit` can improve
+throughput if that point does not block the shared path. For other maps,
+waiting at home may be safer.
 
 ---
 
@@ -503,7 +503,7 @@ However, the RMF graph and mission resource model should not contradict each oth
 Recommended improvements:
 
 - represent transfer as a controlled waypoint or region
-- add staging waypoint as an intentional queue location
+- add directional wait/clear waypoints as intentional queue locations
 - prevent unrelated traffic from casually routing through transfer
 - consider RMF mutexes or graph design to support mission-layer resource rules
 - separate transfer ingress and egress if needed
@@ -511,8 +511,8 @@ Recommended improvements:
 The mission layer should decide who may use transfer. RMF should help ensure the physical movement plan respects that decision.
 
 RMF traffic negotiation and mission resource rules remain separate. Poor graph
-layout, missing mutex groups, or staging on a bottleneck can still cause bad
-traffic behavior even when the mission-layer resource rules are correct.
+layout, missing mutex groups, or wait points on a bottleneck can still cause
+bad traffic behavior even when the mission-layer resource rules are correct.
 
 ---
 
@@ -537,7 +537,7 @@ The mission-state API should include:
 Example dashboard card:
 
 ```text
-tb3_2 waiting at staging
+tb3_2 waiting at downstream_exit
 Reason: P1 not yet available at transfer
 Blocked by: tb3_1 source_to_transfer
 Transfer state: reserved by tb3_1 for dropoff
@@ -596,9 +596,9 @@ This is the most important change for shared-resource collaboration.
 
 ### Step 4: Add event-driven wakeups and configurable waiting policy
 
-Wake blocked tasks when package, resource, robot, or staging state changes.
-Configure waiting behavior per mission or resource so robots can wait at
-staging, home, or their current position as appropriate for the map.
+Wake blocked tasks when package, resource, robot, or wait-point state changes.
+Configure waiting behavior per mission or resource so robots can wait at a
+directional exit, home, or their current position as appropriate for the map.
 
 ### Step 5: Add failure, cancellation, pause, and recovery paths
 

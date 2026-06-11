@@ -45,11 +45,7 @@ the adapter workspace virtual environment. It does not replace `zenohd` or
 
 ## Python Virtual Environment
 
-The central adapter side uses a Python venv at:
-
-```bash
-/home/minhqphan/projects/MAMCUI/adapter_ws/.venv
-```
+The central RMF workspace uses a Python venv at: rmf_ws/.venv
 
 When starting fresh, create and activate a virtual environment, then install the dependencies via `pip install -r requirements.txt`.
 Use the venv for `free_fleet` Python dependencies instead of installing them system-wide with `--break-system-packages`.
@@ -64,33 +60,50 @@ Use the repository workspaces as separate layers:
 robot_ws/
   Robot-local bringup, TurtleBot3 hardware config, Nav2 config, Nav2 map.
 
-adapter_ws/
-  Built free_fleet workspace, adapter-side fleet config, and the project-owned
-  `rmf_asset` package for RMF building maps/nav graphs/launch glue.
+rmf_ws/
+  RMF assets, free_fleet source, fleet configs, system bringup, and mission
+  manager.
 ```
 Do not move the runtime robot-side Zenoh bridge config off the Pi. It can stay in `~/zenoh/config` on the robot. Optionally copy a template into this repo later for version control.
 
 # 3.  Current Site / Map State
 
-Lab building file: `adapter_ws/src/rmf_asset/maps/aiml-lab.building.yaml`
+Lab building file: `rmf_ws/src/system_rmf_bringup/maps/aiml-lab.building.yaml`
 
-Lab drawing: `adapter_ws/src/rmf_asset/maps/aiml-lab.png`
+Lab drawing: `rmf_ws/src/system_rmf_bringup/maps/aiml-lab.png`
 
-Generated RMF nav graph: `adapter_ws/src/rmf_asset/generated_nav_graphs/1.yaml`
+Generated RMF nav graph: `rmf_ws/src/system_rmf_bringup/nav_graphs/1.yaml`
 
-The current RMF graph is intentionally minimal for smoke testing, with mission
-waypoints named `source`, `staging`, `transfer`, and `destination`.
+The current RMF graph is intentionally minimal for the mission corridor:
+
+```text
+robot1_home <-> source
+source <-> upstream_exit
+upstream_exit <-> transfer      mutex: transfer_zone
+transfer <-> downstream_exit    mutex: transfer_zone
+downstream_exit <-> destination
+destination <-> robot2_home
+```
 
 The level name is `LG`. `robot1_home` and `robot2_home` are marked as charger
 waypoints for the two TurtleBot3 robots.
 
 # 4. Current Fleet Config
 
-Fleet config: `adapter_ws/config/free_fleet/tb3_lab_fleet.yaml`
+Fleet config:
+
+```text
+rmf_ws/src/free_fleet_bringup/config/fleet/aiml_lab_multi_tb3_fleet.yaml
+```
 
 Current fleet is called `tb3_lab`
 
-Current configured robot: `tb3_2`.
+Current configured robots:
+
+```text
+tb3_1
+tb3_2
+```
 
 The robot name in the fleet config must match the namespace exposed by the robot's `zenoh-bridge-ros2dds` config.
 
@@ -98,7 +111,8 @@ The config uses `robot1_home` and `robot2_home` as charger/home waypoints. This
 is good enough for smoke testing, but it is not a full docking or charging
 workflow.
 
-Delivery tasks are disabled. Loop / patrol-style motion is the first target.
+Delivery tasks are disabled. The mission layer sends composed `go_to_place`
+robot tasks for one-shot waypoint movements.
 
 # 5. Coordinate Alignment Decision
 
@@ -113,7 +127,7 @@ Important correction: `reference_coordinates.rmf` in the fleet config must use c
 - Installed Zenoh ROS 2 bridge on the robot.
 - Verified that the router and bridge can find each other.
 - Created the robot-side Zenoh bridge config under `~/zenoh/config` on the Pi.
-- Built `free_fleet` in `adapter_ws`.
+- Built `free_fleet` in `rmf_ws`.
 - Created the adapter-side fleet config for the lab TurtleBot3 fleet.
 - Generated an RMF nav graph from the lab `.building.yaml`.
 - Corrected `reference_coordinates` to use generated RMF nav graph coordinates.
@@ -137,7 +151,7 @@ true in the same run:
 - The lab `free_fleet_adapter` stays up and prints that the robot was added to
   fleet `tb3_lab`.
 - `/fleet_states` contains fleet `tb3_lab` and the configured robot name.
-- A small RMF patrol task is awarded to fleet `tb3_lab`.
+- A small RMF go-to-place task is awarded to fleet `tb3_lab`.
 - The adapter prints that a navigation goal was accepted.
 - The physical robot moves to the requested lab waypoints and the task finishes.
 
@@ -146,20 +160,51 @@ connected. It does not finish production tuning of AMCL startup, coordinate
 alignment, lane placement, recovery behavior, charging/docking, or battery
 modeling.
 
-# 8. Lab Waypoint Correspondence
+# 8. Mission Execution Feedback
 
-The generated RMF nav graph uses waypoints `source`, `staging`, `transfer`, and
-`destination`.
+Mission movement completion has a direct side-channel in addition to RMF task
+summaries:
+
+```text
+mission_manager -> mission_execution_commands -> free_fleet Nav2 adapter
+free_fleet Nav2 adapter -> mission_execution_results -> mission_manager
+```
+
+The adapter publishes a mission execution result when Nav2 reports that the
+goal succeeded. The mission manager still keeps RMF task-summary and fleet-state
+fallbacks for integration robustness.
+
+Expected logs:
+
+```text
+Published mission execution result: ...
+Mission command completed from nav2_result: cmd_X
+```
+
+# 9. Lab Waypoint Correspondence
+
+The generated RMF nav graph uses waypoints:
+
+```text
+source
+upstream_exit
+transfer
+downstream_exit
+destination
+robot1_home
+robot2_home
+```
+
 The current fleet config maps those RMF waypoints to approximately these Nav2
 map-frame coordinates:
 
 ```text
 source      -> [ 0.5564,  2.0371]
-staging     -> [-2.1961,  2.1682]
 transfer    -> [-2.3108,  0.2512]
 destination -> [ 0.6056, -0.0110]
 ```
 
-Use these coordinates when comparing a direct Nav2 goal against an RMF patrol
-task. The robot does not need to start physically at `source`; AMCL should be
-given the robot's actual pose on the Nav2 map.
+Use measured Nav2 coordinates for `upstream_exit` and `downstream_exit` when
+validating the moved directional wait points. The robot does not need to start
+physically at `source`; AMCL should be given the robot's actual pose on the Nav2
+map.
