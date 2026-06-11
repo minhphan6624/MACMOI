@@ -10,6 +10,8 @@ class TransportTaskScheduler:
         tasks: dict[str, TransportItemTask],
         world: MissionWorld,
     ) -> TransportItemTask | None:
+        """Return the first pending task whose robot, package, and pickup are ready."""
+
         for task_id in sorted(tasks):
             
             task = tasks[task_id]
@@ -23,6 +25,7 @@ class TransportTaskScheduler:
                 continue
             
             item_at_pickup = world.is_item_at(task.item_id, task.pickup)
+            
             if not item_at_pickup and not self._can_wait_for_pickup(task, world):
                 continue
             if item_at_pickup and not self._managed_pickup_available(task, world):
@@ -31,8 +34,11 @@ class TransportTaskScheduler:
             return task
         return None
 
-    def _can_wait_for_pickup( self, task: TransportItemTask, world: MissionWorld,) -> bool:
-        ''' Logic to determine if '''
+    def _can_wait_for_pickup(self, 
+                             task: TransportItemTask, 
+                             world: MissionWorld,) -> bool:
+        """Return whether the robot can pre-stage while waiting for pickup."""
+
         resource = world.resources.get(task.pickup)
         item = world.items.get(task.item_id)
 
@@ -47,8 +53,11 @@ class TransportTaskScheduler:
             and item.carried_by is not None
         )
 
-    def _managed_pickup_available(self, task: TransportItemTask, world: MissionWorld,) -> bool:
-        ''' Boolean to determine if a resource zone (transfer zone in this case) is available for pickup'''
+    def _managed_pickup_available(self, 
+                                  task: TransportItemTask, 
+                                  world: MissionWorld,) -> bool:
+        """Return whether a managed pickup resource is ready for this task."""
+
         resource = world.resources.get(task.pickup)
         
         if resource is None:

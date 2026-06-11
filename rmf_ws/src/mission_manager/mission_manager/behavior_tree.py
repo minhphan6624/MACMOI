@@ -45,6 +45,8 @@ class MemorySequence(BtNode):
         self.children = children
 
     def tick(self, ctx: TransportTaskContext) -> BtResult:
+        """Tick children in order, resuming from the last unfinished child."""
+
         index_key = f"{self.node_id}.index"
         index = int(ctx.task.bt_blackboard.get(index_key, 0))
 

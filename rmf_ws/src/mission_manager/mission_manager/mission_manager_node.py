@@ -43,6 +43,8 @@ class MissionManagerNode(Node):
     }
 
     def __init__(self):
+        """Initialize ROS I/O, mission runtime, RMF adapter, and debug state."""
+
         super().__init__("mission_manager")
 
         self.declare_parameter("mission_id", "m1")
@@ -159,6 +161,8 @@ class MissionManagerNode(Node):
         self._publish_mission_state()
 
     def _handle_task_summaries(self, msg) -> None:
+        """Complete mission commands from RMF task summary completion events."""
+
         commands = []
         task_states = getattr(msg, "tasks", [msg])
         for task_state in task_states:
@@ -177,6 +181,8 @@ class MissionManagerNode(Node):
         self._dispatch_commands(commands)
 
     def _handle_fleet_state(self, msg: FleetState) -> None:
+        """Use fleet state as a fallback completion source for move commands."""
+
         if msg.name != FLEET_NAME:
             return
         if not self.enable_fleet_state_completion_fallback:
@@ -239,6 +245,8 @@ class MissionManagerNode(Node):
         )
 
     def _robot_reached_command_target(self, fleet_robot, command: ExecutionCommand) -> bool:
+        """Return whether a fleet robot appears to have reached a command target."""
+
         if command.command_type != ExecutionCommandType.MOVE_ROBOT:
             return False
         if command.target is None:
@@ -262,6 +270,8 @@ class MissionManagerNode(Node):
         source: str,
         rmf_task_id: str | None = None,
     ) -> list[ExecutionCommand]:
+        """Record command completion and let mission logic advance."""
+
         self._record_event(
             {
                 "type": "ExecutionCommandCompleted",
@@ -276,6 +286,8 @@ class MissionManagerNode(Node):
         return self.mission_manager.complete_command(command_id)
 
     def _handle_mission_command(self, msg: String) -> None:
+        """Handle operator mission commands from the mission command topic."""
+
         try:
             command = json.loads(msg.data)
         except json.JSONDecodeError:
@@ -293,6 +305,8 @@ class MissionManagerNode(Node):
         self.get_logger().warning(f"Unsupported mission command: {command}")
 
     def _handle_execution_result(self, msg: String) -> None:
+        """Handle direct execution results from the Free Fleet/Nav2 side channel."""
+
         try:
             result = json.loads(msg.data)
         except json.JSONDecodeError:
@@ -328,6 +342,8 @@ class MissionManagerNode(Node):
             self._publish_mission_state()
 
     def _dispatch_commands(self, commands: list[ExecutionCommand]) -> None:
+        """Send emitted mission commands to RMF or local handling simulation."""
+
         for command in commands:
             self._record_action(command)
             if command.command_type == ExecutionCommandType.MOVE_ROBOT:
@@ -341,6 +357,8 @@ class MissionManagerNode(Node):
         self._publish_mission_state()
 
     def _publish_execution_command(self, command: ExecutionCommand) -> None:
+        """Publish command context for external execution result producers."""
+
         if command.target is None:
             return
 
@@ -358,6 +376,8 @@ class MissionManagerNode(Node):
         self.execution_command_pub.publish(msg)
 
     def _start_handling_timer(self, command: ExecutionCommand) -> None:
+        """Simulate package load/unload completion with a short ROS timer."""
+
         seconds = 5.0
         timer_ref = {}
         timer_info = {
@@ -371,6 +391,8 @@ class MissionManagerNode(Node):
         self.mission_manager.execution.mark_running(command.command_id)
 
         def on_timer():
+            """Complete the simulated package handling command."""
+
             timer_ref["timer"].cancel()
             if timer_info in self.active_handling_timers:
                 self.active_handling_timers.remove(timer_info)
@@ -389,6 +411,8 @@ class MissionManagerNode(Node):
         timer_ref["timer"] = self.create_timer(seconds, on_timer)
         self.handling_timers.append(timer_ref["timer"])
 
+    # ----- Topic publishing helpers -----
+
     def _record_event(self, event) -> None:
         event_dict = event_to_dict(event)
         self.last_event = event_dict
@@ -402,6 +426,8 @@ class MissionManagerNode(Node):
         self.recent_actions = self.recent_actions[-20:]
 
     def _publish_mission_state(self) -> None:
+        """Publish the current serialized mission state."""
+
         msg = String()
         msg.data = json.dumps(
             serialize_runtime_mission_state(

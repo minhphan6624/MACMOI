@@ -44,6 +44,8 @@ class ExecutionManager:
         self._counter = count(1)
 
     def create_move(self, task_id: str, robot_id: str, target: str) -> ExecutionCommand:
+        """Create and store a robot movement command."""
+
         return self._add_command(
             ExecutionCommand(
                 command_id=self._next_command_id(),
@@ -61,6 +63,8 @@ class ExecutionManager:
         item_id: str,
         handling_type: str,
     ) -> ExecutionCommand:
+        """Create and store a package handling command."""
+
         return self._add_command(
             ExecutionCommand(
                 command_id=self._next_command_id(),

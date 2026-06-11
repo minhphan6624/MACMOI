@@ -20,9 +20,13 @@ class ResourceManager:
         item_id: str | None = None,
         task_id: str | None = None,
     ) -> ResourceAccessDecision:
+        """Grant, wait, or block access to a managed mission resource."""
+
         resource = self.resources[resource_id]
 
         def wait(reason: str, blocked_by: str | None = None) -> ResourceAccessDecision:
+            """Build a wait decision when a wait waypoint exists, otherwise block."""
+
             wait_waypoint = self._wait_waypoint(resource, actor_id)
             if wait_waypoint is not None:
                 return ResourceAccessDecision(
@@ -72,12 +76,13 @@ class ResourceManager:
 
     def _grant_lease(
         self,
-        resource: ResourceState,
-        actor_id: str,
+        resource: ResourceState, actor_id: str,
         purpose: str,
         item_id: str | None,
         task_id: str | None,
     ) -> None:
+        """Create a resource lease when one is not already active."""
+
         if resource.active_lease is not None:
             return
         resource.active_lease = ResourceLease(

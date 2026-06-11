@@ -25,6 +25,8 @@ class RmfExecutionAdapter:
         publish_request=None,
         logger=None,
     ):
+        """Initialize RMF request tracking and optional publish/log hooks."""
+
         self.config = config or RmfExecutionAdapterConfig()
         self.publish_request = publish_request
         self.logger = logger
@@ -33,6 +35,8 @@ class RmfExecutionAdapter:
         self.completed_rmf_task_ids: set[str] = set()
 
     def build_payload(self, command: ExecutionCommand, world: MissionWorld) -> dict[str, Any]:
+        """Build an RMF compose task payload for a move command."""
+
         if command.command_type != ExecutionCommandType.MOVE_ROBOT or command.target is None:
             raise ValueError(f"Unsupported RMF execution command: {command}")
 
@@ -66,6 +70,8 @@ class RmfExecutionAdapter:
         }
 
     def submit_command(self, command: ExecutionCommand, world: MissionWorld) -> str:
+        """Publish a mission execution command as an RMF task request."""
+
         request_id = f"mission_{uuid4()}"
         payload = self.build_payload(command, world)
         self.pending_commands[request_id] = command.command_id
@@ -76,6 +82,8 @@ class RmfExecutionAdapter:
         return request_id
 
     def handle_api_response(self, msg) -> str | None:
+        """Map a successful RMF API response back to a mission command ID."""
+
         responding_type = getattr(msg, "TYPE_RESPONDING", 2)
         if hasattr(msg, "type") and msg.type != responding_type:
             return None
@@ -98,6 +106,8 @@ class RmfExecutionAdapter:
         return command_id
 
     def command_from_completed_task(self, task_id: str) -> str | None:
+        """Return the mission command for a newly completed RMF task."""
+
         if task_id in self.completed_rmf_task_ids:
             return None
 

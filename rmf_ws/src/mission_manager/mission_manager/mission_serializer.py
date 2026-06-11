@@ -35,6 +35,8 @@ def event_to_dict(event):
 
 
 def serialize_runtime_mission_state(mission_manager, adapter=None, node_debug=None):
+    """Serialize mission runtime state for the operator-facing ROS topic."""
+
     runtime = mission_manager.runtime
     world = runtime.world
     debug = node_debug or {}

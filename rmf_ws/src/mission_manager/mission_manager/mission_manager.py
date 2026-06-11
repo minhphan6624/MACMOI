@@ -51,6 +51,8 @@ class MissionManager:
         upstream_robot: str = UPSTREAM_ROBOT,
         downstream_robot: str = DOWNSTREAM_ROBOT,
     ):
+        """Build the fixed two-robot package handoff mission."""
+
         tasks = {}
         items = {}
         
@@ -96,6 +98,7 @@ class MissionManager:
         return cls(MissionRuntime(mission_id, MissionStatus.READY, tasks, world))
 
     def start(self) -> list[ExecutionCommand]:
+        """Start a ready mission and return any commands it immediately emits."""
 
         if self.runtime.status == MissionStatus.READY:
             self.runtime.status = MissionStatus.RUNNING
@@ -103,6 +106,8 @@ class MissionManager:
         return self.tick()
 
     def tick(self) -> list[ExecutionCommand]:
+        """Advance mission logic and return newly emitted execution commands."""
+
         if self.runtime.status != MissionStatus.RUNNING:
             return []
             
@@ -123,6 +128,7 @@ class MissionManager:
         return self.task_runner.start(task)
 
     def complete_command(self, command_id: str) -> list[ExecutionCommand]:
+        """Apply a completed execution command and continue mission progress."""
         
         if command_id not in self.execution.commands:
             return []
