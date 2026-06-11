@@ -50,6 +50,8 @@ class MissionManagerNode(Node):
         self.declare_parameter("fleet_states_topic", "fleet_states")
         self.declare_parameter("mission_state_topic", "mission_state")
         self.declare_parameter("mission_commands_topic", "mission_commands")
+        self.declare_parameter("mission_execution_commands_topic", "mission_execution_commands")
+        self.declare_parameter("mission_execution_results_topic", "mission_execution_results")
         self.declare_parameter("enable_fleet_state_completion_fallback", True)
         self.declare_parameter("target_position_tolerance", 0.35)
 
@@ -101,6 +103,17 @@ class MissionManagerNode(Node):
             String,
             self.get_parameter("mission_commands_topic").value,
             self._handle_mission_command,
+            10,
+        )
+        self.execution_command_pub = self.create_publisher(
+            String,
+            self.get_parameter("mission_execution_commands_topic").value,
+            10,
+        )
+        self.create_subscription(
+            String,
+            self.get_parameter("mission_execution_results_topic").value,
+            self._handle_execution_result,
             10,
         )
 
@@ -269,10 +282,46 @@ class MissionManagerNode(Node):
 
         self.get_logger().warning(f"Unsupported mission command: {command}")
 
+    def _handle_execution_result(self, msg: String) -> None:
+        try:
+            result = json.loads(msg.data)
+        except json.JSONDecodeError:
+            self.get_logger().warning(f"Invalid execution result JSON: {msg.data}")
+            return
+
+        if result.get("mission_id") != self.mission_manager.runtime.mission_id:
+            return
+
+        command_id = result.get("command_id")
+        if not isinstance(command_id, str):
+            self.get_logger().warning(f"Execution result missing command_id: {result}")
+            return
+
+        command = self.mission_manager.execution.commands.get(command_id)
+        if command is None or self._is_terminal_command(command):
+            return
+
+        status = result.get("status")
+        if status == "SUCCEEDED":
+            commands = self._complete_execution_command(
+                command_id,
+                result.get("source", "execution_result"),
+                result.get("rmf_task_id"),
+            )
+            self._dispatch_commands(commands)
+            return
+
+        if status in ("FAILED", "CANCELLED"):
+            error = result.get("error") or status
+            self.mission_manager.execution.mark_failed(command_id, error)
+            self._record_event(result)
+            self._publish_mission_state()
+
     def _dispatch_commands(self, commands: list[ExecutionCommand]) -> None:
         for command in commands:
             self._record_action(command)
             if command.command_type == ExecutionCommandType.MOVE_ROBOT:
+                self._publish_execution_command(command)
                 self.rmf_adapter.submit_command(command, self.mission_manager.runtime.world)
                 self.mission_manager.execution.mark_submitted(command.command_id)
             elif command.command_type == ExecutionCommandType.HANDLE_ITEM:
@@ -280,6 +329,23 @@ class MissionManagerNode(Node):
             else:
                 self.get_logger().warning(f"Unsupported execution command: {command}")
         self._publish_mission_state()
+
+    def _publish_execution_command(self, command: ExecutionCommand) -> None:
+        if command.target is None:
+            return
+
+        msg = String()
+        msg.data = json.dumps(
+            {
+                "mission_id": self.mission_manager.runtime.mission_id,
+                "command_id": command.command_id,
+                "task_id": command.task_id,
+                "robot_id": command.robot_id,
+                "target": command.target,
+                "command_type": command.command_type.value,
+            }
+        )
+        self.execution_command_pub.publish(msg)
 
     def _start_handling_timer(self, command: ExecutionCommand) -> None:
         seconds = 5.0
