@@ -1,0 +1,10 @@
+repositories:
+  web:
+    type: git
+    url: git@github.com:minhphan6624/rmf-web.git
+    version: main-web-demo
+
+  rmf_ws/src/free_fleet:
+    type: git
+    url: git@github.com:minhphan6624/free_fleet.git
+    version: my-patches
