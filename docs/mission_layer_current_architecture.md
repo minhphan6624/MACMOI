@@ -58,10 +58,10 @@ TransportTaskScheduler:
 TransportTaskBtRunner:
   executes one transport task using a small behavior-tree sequence
 
-RuntimeWorld:
+MissionWorld:
   mission-layer belief about robots, items, and resources
 
-WorldResourceManager:
+ResourceManager:
   resource access, transfer leases, occupancy, and package buffering
 
 ExecutionManager:
@@ -174,7 +174,7 @@ mutexes help the physical movement respect that decision.
 mission_id
 mission status
 transport task instances
-RuntimeWorld
+MissionWorld
 ```
 
 Main behavior:
@@ -298,7 +298,7 @@ upstream unload into transfer:
 
 ## Resource Access
 
-`WorldResourceManager.request_access(...)` is the resource-access gate.
+`ResourceManager.request_access(...)` is the resource-access gate.
 
 Current transfer rules:
 
@@ -537,7 +537,7 @@ TransportTaskScheduler:
 TransportTaskBtRunner:
   richer task behavior, retry/recovery, alternative BT backend
 
-WorldResourceManager:
+ResourceManager:
   queues, stronger lease arbitration, timeouts
 
 RmfExecutionAdapter:

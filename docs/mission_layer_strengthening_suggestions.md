@@ -60,10 +60,10 @@ TransportTaskScheduler:
 TransportTaskBtRunner:
   per-task execution behavior
 
-RuntimeWorld:
+MissionWorld:
   mission-layer robot/item/resource state
 
-WorldResourceManager:
+ResourceManager:
   transfer-zone access decisions
 
 RmfExecutionAdapter:
@@ -582,7 +582,7 @@ This gives immediate value to the mission layer and dashboard.
 
 ### Step 3: Make reservations and leases primary
 
-Upgrade `WorldResourceManager` so transfer access is based on:
+Upgrade `ResourceManager` so transfer access is based on:
 
 ```text
 leases

@@ -109,7 +109,7 @@ Current limitations:
 Recommended next improvement:
 
 ```text
-add a small queue and timeout model to WorldResourceManager
+add a small queue and timeout model to ResourceManager
 ```
 
 This is not required for the two-robot happy path, but it will matter for
