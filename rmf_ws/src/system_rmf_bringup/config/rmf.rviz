@@ -6,8 +6,6 @@ Panels:
       Expanded:
         - /MarkerArray2
         - /MarkerArray2/Namespaces1
-        - /MarkerArray4
-        - /MarkerArray4/Topic1
       Splitter Ratio: 0.5
     Tree Height: 995
   - Class: rviz_common/Selection
@@ -22,8 +20,6 @@ Panels:
       - /Current View1
     Name: Views
     Splitter Ratio: 0.5
-  - Class: rviz_common/Selection
-    Name: Selection
   - Class: rmf_visualization_rviz2_plugins/SchedulePanel
     Finish: 600
     Map: LG
@@ -101,45 +97,6 @@ Visualization Manager:
         Value: /floor_plan
       Use Timestamp: false
       Value: true
-    - Class: rviz_default_plugins/MarkerArray
-      Enabled: true
-      Name: MarkerArray
-      Namespaces:
-        LF001: true
-        LF001_text: true
-        back_entrance_door: true
-        back_entrance_door_text: true
-        chart_cssd_door: true
-        chart_cssd_door_text: true
-        consult_door: true
-        consult_door_text: true
-        front_entrance_door: true
-        front_entrance_door_text: true
-        hdb_door: true
-        hdb_door_text: true
-        large_bathroom_door: true
-        large_bathroom_door_text: true
-        room_1_door: true
-        room_1_door_text: true
-        room_2_door: true
-        room_2_door_text: true
-        room_3_side_door: true
-        room_3_side_door_text: true
-        room_4_door: true
-        room_4_door_text: true
-        room_5_door: true
-        room_5_door_text: true
-        small_bathroom_door: true
-        small_bathroom_door_text: true
-        workshop_door: true
-        workshop_door_text: true
-      Topic:
-        Depth: 5
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /building_systems_markers
-      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -190,11 +147,11 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 67.73674011230469
+      Scale: 30
       Target Frame: <Fixed Frame>
       Value: TopDownOrtho (rviz_default_plugins)
-      X: 17.74840545654297
-      Y: -20.00192642211914
+      X: 12.95
+      Y: -4.76
     Saved: ~
 Window Geometry:
   Displays:

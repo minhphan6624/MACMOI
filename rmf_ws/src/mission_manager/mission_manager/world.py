@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from .resources import ResourceState
+from .resources import ResourceAccessDecision, ResourceState
 from .world_resource_manager import WorldResourceManager
 
 

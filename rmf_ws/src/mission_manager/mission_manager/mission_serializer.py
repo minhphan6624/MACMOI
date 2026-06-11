@@ -34,8 +34,8 @@ def event_to_dict(event):
     return data
 
 
-def serialize_runtime_mission_state(orchestrator, adapter=None, node_debug=None):
-    runtime = orchestrator.runtime
+def serialize_runtime_mission_state(mission_manager, adapter=None, node_debug=None):
+    runtime = mission_manager.runtime
     world = runtime.world
     debug = node_debug or {}
     total_packages = len(world.items)
@@ -46,7 +46,7 @@ def serialize_runtime_mission_state(orchestrator, adapter=None, node_debug=None)
     )
     active_command_ids = [
         command.command_id
-        for command in orchestrator.execution.commands.values()
+        for command in mission_manager.execution.commands.values()
         if command.status
         not in (
             ExecutionCommandStatus.SUCCEEDED,
@@ -73,6 +73,11 @@ def serialize_runtime_mission_state(orchestrator, adapter=None, node_debug=None)
 
     transfer_resource = world.resources.get(TRANSFER_WAYPOINT)
     transfer = {
+        "active_lease": (
+            _json_value(transfer_resource.active_lease)
+            if transfer_resource is not None
+            else None
+        ),
         "robot_occupancy": (
             transfer_resource.robot_occupancy[0]
             if transfer_resource is not None and transfer_resource.robot_occupancy
@@ -106,7 +111,7 @@ def serialize_runtime_mission_state(orchestrator, adapter=None, node_debug=None)
         "transfer": _json_value(transfer),
         "mission_tasks": _json_value(runtime.tasks),
         "resources": _json_value(world.resources),
-        "execution_commands": _json_value(orchestrator.execution.commands),
+        "execution_commands": _json_value(mission_manager.execution.commands),
         "operator": {
             "active_command_count": len(active_command_ids),
             "blocked_task_count": sum(

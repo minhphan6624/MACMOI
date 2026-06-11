@@ -31,6 +31,7 @@ class TransportTaskPhase(Enum):
     LOAD_ITEM = "LOAD_ITEM"
     ACQUIRE_DROPOFF = "ACQUIRE_DROPOFF"
     MOVE_TO_STAGING = "MOVE_TO_STAGING"
+    MOVE_TO_TRANSFER_EXIT = "MOVE_TO_TRANSFER_EXIT"
     WAIT_FOR_RESOURCE = "WAIT_FOR_RESOURCE"
     MOVE_TO_DROPOFF = "MOVE_TO_DROPOFF"
     UNLOAD_ITEM = "UNLOAD_ITEM"
@@ -51,3 +52,9 @@ class TransportItemTask:
     active_command_id: str | None = None
     waiting_resource_id: str | None = None
     waiting_purpose: str | None = None
+    blocked_reason: str | None = None
+    blocked_by: str | None = None
+    waiting_at: str | None = None
+    unblock_condition: str | None = None
+    next_expected_event: str | None = None
+    bt_blackboard: dict = field(default_factory=dict)

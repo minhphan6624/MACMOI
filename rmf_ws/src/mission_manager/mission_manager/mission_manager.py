@@ -3,17 +3,19 @@ from dataclasses import dataclass
 from .execution import ExecutionCommand, ExecutionManager
 from .mission_definition import (
     DESTINATION_WAYPOINT,
+    DOWNSTREAM_WAIT_WAYPOINT,
     DOWNSTREAM_HOME_WAYPOINT,
     DOWNSTREAM_ROBOT,
     SOURCE_WAYPOINT,
     TRANSFER_WAYPOINT,
+    UPSTREAM_WAIT_WAYPOINT,
     UPSTREAM_HOME_WAYPOINT,
     UPSTREAM_ROBOT,
 )
 from .mission_tasks import MissionStatus, MissionTaskStatus, TransportItemTask
 from .resources import ResourceState, ResourceType
 from .scheduler import TransportTaskScheduler
-from .task_runner import TransportTaskRunner
+from .transport_bt_runner import TransportTaskBtRunner
 from .world import RuntimeWorld, WorldItemState, WorldRobotState
 
 
@@ -25,7 +27,7 @@ class MissionRuntime:
     world: RuntimeWorld
 
 
-class MissionOrchestrator:
+class MissionManager:
     def __init__(
         self,
         runtime: MissionRuntime,
@@ -35,7 +37,7 @@ class MissionOrchestrator:
         self.runtime = runtime
         self.scheduler = scheduler or TransportTaskScheduler()
         self.execution = execution or ExecutionManager()
-        self.task_runner = TransportTaskRunner(runtime.world, self.execution)
+        self.task_runner = TransportTaskBtRunner(runtime.world, self.execution)
 
     @classmethod
     def create_default(
@@ -79,6 +81,10 @@ class MissionOrchestrator:
                     resource_type=ResourceType.TRANSFER_ZONE,
                     robot_capacity=1,
                     package_capacity=1,
+                    wait_waypoints={
+                        upstream_robot: UPSTREAM_WAIT_WAYPOINT,
+                        downstream_robot: DOWNSTREAM_WAIT_WAYPOINT,
+                    },
                 )
             },
         )
@@ -102,7 +108,7 @@ class MissionOrchestrator:
             if task.status in (MissionTaskStatus.RUNNING, MissionTaskStatus.BLOCKED):
                 commands = self.task_runner.advance(task)
                 if commands:
-                    return commands
+                    return self._with_next_ready_task(commands)
 
         task = self.scheduler.next_ready_task(self.runtime.tasks, self.runtime.world)
         if task is None:
@@ -120,4 +126,10 @@ class MissionOrchestrator:
         if task is None:
             return []
         commands = self.task_runner.handle_command_succeeded(task, command)
-        return commands or self.tick()
+        return self._with_next_ready_task(commands) if commands else self.tick()
+
+    def _with_next_ready_task(self, commands: list[ExecutionCommand]) -> list[ExecutionCommand]:
+        task = self.scheduler.next_ready_task(self.runtime.tasks, self.runtime.world)
+        if task is None:
+            return commands
+        return [*commands, *self.task_runner.start(task)]

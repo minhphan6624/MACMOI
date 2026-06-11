@@ -1,89 +1,88 @@
 # Mission Layer Current Architecture
 
-This document is the current source-of-truth for the `mrd_mission_manager`
-architecture. The mission layer now runs on generalized transport tasks,
-runtime world state, resource management, execution commands, and an RMF
-execution adapter.
+This document describes the current `mission_manager` implementation. The
+system is a centralized mission-control layer above Open-RMF / Free Fleet:
 
-The old mission-controller path based on a mission-specific FSM, rule evaluator,
-transfer controller, task segments, and bridge-level mission semantics has been
-removed from the active runtime.
+```text
+Central mission layer:
+  package workflow, robot roles, transfer resource rules, mission state
+
+Open-RMF / Free Fleet:
+  traffic-aware waypoint execution, fleet state, Nav2 command dispatch
+
+Robot PCs:
+  TurtleBot3 hardware, localization, Nav2, Zenoh ROS 2 bridge
+```
+
+The active mission is a fixed two-robot handoff:
+
+```text
+source -> transfer -> destination
+
+tb3_1 moves packages from source to transfer
+tb3_2 moves packages from transfer to destination
+```
+
+The mission layer treats this as transport task instances rather than a single
+large fixed FSM.
 
 ---
 
-## 1. Runtime Shape
+## Runtime Flow
 
 The active runtime path is:
 
 ```text
 MissionManagerNode
-  -> MissionOrchestrator
+  -> MissionManager
   -> TransportTaskScheduler
-  -> TransportTaskRunner
+  -> TransportTaskBtRunner
   -> ExecutionManager
   -> RmfExecutionAdapter / handling timer
-  -> command completion
-  -> MissionOrchestrator
+  -> execution completion
+  -> MissionManager
 ```
 
-The main separation is:
+The main split is:
 
 ```text
 MissionManagerNode:
-  ROS I/O and timers
+  ROS I/O, RMF subscriptions, execution-result subscriptions, mission_state publication
 
-MissionOrchestrator:
-  mission lifecycle and task coordination
+MissionManager:
+  mission lifecycle, task coordination, command completion handling
 
 TransportTaskScheduler:
-  chooses ready transport tasks
+  selects the next pending task that is allowed to start
 
-TransportTaskRunner:
-  advances one transport task workflow
+TransportTaskBtRunner:
+  executes one transport task using a small behavior-tree sequence
 
 RuntimeWorld:
-  robot, item, and resource truth
+  mission-layer belief about robots, items, and resources
 
 WorldResourceManager:
-  resource acquisition, occupancy, and buffer operations
+  resource access, transfer leases, occupancy, and package buffering
 
 ExecutionManager:
-  execution command lifecycle
+  creates and tracks execution commands
 
 RmfExecutionAdapter:
-  RMF task API adapter for robot movement commands
+  converts move commands into RMF task API requests
 ```
 
-The current mission behavior is still the two-robot package handoff:
+Source map:
 
 ```text
-source -> transfer -> destination
-
-tb3_1 transports item from source to transfer
-tb3_2 transports item from transfer to destination
-```
-
-That behavior is represented as task instances instead of mission-specific
-segments:
-
-```text
-transportItem(P1, source, transfer, tb3_1)
-transportItem(P1, transfer, destination, tb3_2)
-```
-
-### Source Map
-
-The active mission runtime is implemented in:
-
-```text
-mission_manager_node.py       ROS node, topics, timers, RMF subscriptions
-orchestrator.py               mission lifecycle and task coordination
+mission_manager_node.py       ROS node, topics, timers, RMF/free_fleet callbacks
+mission_manager.py            mission lifecycle and task coordination
 mission_tasks.py              mission/task status and transport task model
-scheduler.py                  deterministic ready-task selection
-task_runner.py                transport task workflow runner
-world.py                      robot/item world state
-world_resource_manager.py     resource acquisition and buffer rules
-resources.py                  generic resource state model
+scheduler.py                  deterministic ready-task selection and pre-staging
+behavior_tree.py              minimal BT primitives
+transport_bt_runner.py        transport task BT executor
+world.py                      robot/item/resource runtime state facade
+world_resource_manager.py     transfer access, lease, occupancy, buffer rules
+resources.py                  resource state model
 execution.py                  execution command lifecycle
 rmf_execution_adapter.py      RMF task API adapter for movement commands
 mission_serializer.py         mission_state JSON serialization
@@ -91,115 +90,9 @@ mission_serializer.py         mission_state JSON serialization
 
 ---
 
-## 2. MissionManagerNode
+## Default Mission Model
 
-`mission_manager_node.py` is the ROS runtime shell.
-
-It owns:
-
-* ROS publishers/subscribers
-* mission command handling
-* RMF task API request publication
-* RMF task response and task summary subscriptions
-* fleet-state fallback completion detection
-* simulated handling timers
-* mission-state publication
-* recent command/debug history
-
-It does not own mission policy. It delegates mission behavior to the
-`MissionOrchestrator`.
-
-### Inputs
-
-Mission commands arrive on the configured mission command topic as JSON:
-
-```json
-{"command": "start", "mission_id": "m1"}
-```
-
-RMF updates arrive through:
-
-```text
-task_api_responses
-task_summaries
-fleet_states
-```
-
-### Outputs
-
-The node publishes:
-
-```text
-task_api_requests
-mission_state
-```
-
-### Command Dispatch
-
-The node dispatches `ExecutionCommand`s:
-
-```text
-MOVE_ROBOT
-  -> RmfExecutionAdapter.submit_command(...)
-
-HANDLE_ITEM
-  -> ROS timer
-```
-
-When a handling timer fires, the node completes the command:
-
-```text
-orchestrator.complete_command(command_id)
-```
-
----
-
-## 3. MissionOrchestrator
-
-`orchestrator.py` owns the mission runtime.
-
-It contains:
-
-```text
-MissionRuntime
-MissionOrchestrator
-```
-
-`MissionRuntime` holds:
-
-* `mission_id`
-* mission status
-* transport task instances
-* `RuntimeWorld`
-
-`MissionOrchestrator` owns:
-
-* `TransportTaskScheduler`
-* `TransportTaskRunner`
-* `ExecutionManager`
-
-The orchestrator is responsible for:
-
-* creating the default mission runtime
-* starting the mission
-* ticking the scheduler
-* starting ready tasks
-* receiving completed command IDs
-* advancing task workflows
-* marking the mission completed when all tasks succeed
-
-It does not publish ROS messages or RMF requests directly.
-
-### Default Mission Creation
-
-`MissionOrchestrator.create_default(...)` creates:
-
-* one `WorldItemState` per package
-* two `TransportItemTask` instances per package
-* default robot states for upstream/downstream robots
-* one transfer resource with one robot slot and one package slot
-
-For package `P1`, the default tasks are:
+`MissionManager.create_default(...)` creates two tasks per package:
 
 ```text
 P1:source_to_transfer
@@ -215,312 +108,300 @@ P1:transfer_to_destination
   robot_id = tb3_2
 ```
 
----
+For `N` packages, the runtime creates `2N` transport tasks.
 
-## 4. Mission Tasks
-
-`mission_tasks.py` defines the task model.
-
-Main types:
+The default world starts as:
 
 ```text
-MissionStatus
-MissionTaskType
-MissionTaskStatus
-TransportTaskPhase
-TransportItemTask
+tb3_1.location = robot1_home
+tb3_2.location = robot2_home
+P1.location = source
+transfer.robot_capacity = 1
+transfer.package_capacity = 1
+transfer.wait_waypoints = {
+  tb3_1: upstream_exit
+  tb3_2: downstream_exit
+}
 ```
 
-The currently implemented mission task type is:
+The transfer zone is the only managed mission resource. Directional exit
+waypoints double as safe wait/clear points:
 
 ```text
-transport_item
+tb3_1 waits or clears at upstream_exit
+tb3_2 waits or clears at downstream_exit
 ```
 
-`TransportItemTask` describes one movement of one item:
-
-```text
-task_id
-item_id
-pickup
-dropoff
-robot_id
-status
-required_resources
-phase
-active_command_id
-waiting_resource_id
-waiting_purpose
-```
-
-Task phases are intentionally explicit:
-
-```text
-NOT_STARTED
-ACQUIRE_PICKUP
-MOVE_TO_PICKUP
-LOAD_ITEM
-ACQUIRE_DROPOFF
-MOVE_TO_STAGING
-WAIT_FOR_RESOURCE
-MOVE_TO_DROPOFF
-UNLOAD_ITEM
-DONE
-```
-
-These phases are the current lightweight workflow representation. Later, they
-can be replaced by, or wrapped with, a behavior tree executor.
+There is still a `staging` waypoint in the map assets, but it is no longer part
+of the active mission logic.
 
 ---
 
-## 5. Scheduler
+## RMF Graph Semantics
 
-`scheduler.py` defines `TransportTaskScheduler`.
+The active RMF navigation graph is intentionally constrained to the mission
+corridor:
 
-The scheduler chooses the next ready `TransportItemTask`.
+```text
+robot1_home <-> source
+source <-> upstream_exit
+upstream_exit <-> transfer      mutex: transfer_zone
+transfer <-> downstream_exit    mutex: transfer_zone
+downstream_exit <-> destination
+destination <-> robot2_home
+```
+
+Only the lanes that enter or leave the transfer conflict area use the
+`transfer_zone` mutex:
+
+```text
+upstream_exit <-> transfer
+transfer <-> downstream_exit
+```
+
+The mission layer decides which robot may use transfer. RMF graph design and
+mutexes help the physical movement respect that decision.
+
+---
+
+## Mission Orchestrator
+
+`mission_manager.py` owns the mission runtime.
+
+`MissionRuntime` holds:
+
+```text
+mission_id
+mission status
+transport task instances
+RuntimeWorld
+```
+
+Main behavior:
+
+```text
+start()
+  set READY -> RUNNING
+  tick()
+
+tick()
+  if all tasks succeeded, mark mission COMPLETED
+  advance any RUNNING or BLOCKED task
+  otherwise ask scheduler for a ready PENDING task
+  start the selected task through the BT runner
+
+complete_command(command_id)
+  mark command succeeded
+  let BT runner update world state
+  advance the task
+  optionally start another ready task
+```
+
+The mission manager does not publish ROS messages or RMF requests directly. It
+returns `ExecutionCommand` objects to the ROS node.
+
+---
+
+## Scheduler
+
+`TransportTaskScheduler` chooses the next ready `TransportItemTask`.
 
 Current readiness checks:
 
 ```text
-task status is PENDING
-task has an assigned robot
-assigned robot is available
-item is at the task pickup location
+task.status == PENDING
+task.robot_id is assigned
+assigned robot is IDLE
+item is physically at task.pickup
+managed pickup resource is available
 ```
 
-For the default mission, this means:
+There is one pre-staging exception: a task may start early if its pickup is a
+managed resource with a robot-specific wait waypoint and the item is currently
+being carried. This lets `tb3_2` move to `downstream_exit` while `tb3_1` is
+carrying the package toward transfer, but `tb3_2` still cannot enter transfer
+until the resource manager grants pickup access.
 
-```text
-1. P1:source_to_transfer can start while P1 is at source.
-2. P1:transfer_to_destination can start after P1 reaches transfer.
-```
-
-The current scheduler is deterministic and simple. It is the extension point for
-future priority, allocation, or planner-based task selection.
+The scheduler is deterministic and simple. It sorts task IDs and picks the first
+eligible task.
 
 ---
 
-## 6. TransportTaskRunner
+## Behavior Tree Runner
 
-`task_runner.py` executes a `TransportItemTask` workflow.
+`TransportTaskBtRunner` executes one `TransportItemTask`.
 
-It advances a task phase by phase and emits `ExecutionCommand`s for work that
-must be executed externally.
-
-For source-to-transfer, the normal flow is:
+The current tree is:
 
 ```text
-LOAD_ITEM
-ACQUIRE_DROPOFF
-MOVE_TO_DROPOFF
-UNLOAD_ITEM
-DONE
+MemorySequence transport_item
+  AssignRobot
+  RequestResourceAccess(pickup)
+  MoveTo(pickup)
+  MarkResourceOccupied(pickup)
+  HandleItem(load)
+  UpdateResourceAfterHandling(pickup, load)
+  VacateResourceIfManaged(pickup)
+  ReleaseResourceIfManaged(pickup)
+  RequestResourceAccess(dropoff)
+  MoveTo(dropoff)
+  MarkResourceOccupied(dropoff)
+  HandleItem(unload)
+  UpdateResourceAfterHandling(dropoff, unload)
+  VacateResourceIfManaged(dropoff)
+  ReleaseResourceIfManaged(dropoff)
+  ReleaseRobot
+  MarkTaskSucceeded
 ```
 
-For transfer-to-destination, the normal flow is:
+The BT emits commands instead of executing work directly:
 
 ```text
-ACQUIRE_PICKUP
-MOVE_TO_PICKUP
-LOAD_ITEM
-MOVE_TO_DROPOFF
-UNLOAD_ITEM
-DONE
+MoveTo(...)
+  -> ExecutionCommand(MOVE_ROBOT)
+
+HandleItem(...)
+  -> ExecutionCommand(HANDLE_ITEM)
 ```
 
-The task runner updates `RuntimeWorld` when commands complete.
-
-### Handling Occupied Transfer
-
-If a robot needs the transfer resource and it is unavailable:
+World state is updated after command completion:
 
 ```text
-can_acquire(transfer, robot, purpose, item) -> false
+MOVE_ROBOT succeeded:
+  world.move_robot(robot_id, target)
+
+HANDLE_ITEM load succeeded:
+  world.load_item(robot_id, item_id)
+
+HANDLE_ITEM unload succeeded:
+  world.unload_item(robot_id, item_id, task.dropoff)
 ```
 
-the task runner emits:
+For managed resources, package and resource state changes happen near the
+physical event that justifies them:
 
 ```text
-MOVE_ROBOT(robot, staging)
-```
+downstream load from transfer:
+  remove item from transfer buffer
+  move to downstream_exit
+  release transfer occupancy and lease
+  continue to destination
 
-and moves the task into:
-
-```text
-WAIT_FOR_RESOURCE
-```
-
-When the orchestrator ticks again and the resource can be acquired, the task
-continues to the transfer waypoint.
-
-This is the current explicit equivalent of a future BT fallback:
-
-```text
-Fallback
-  Sequence
-    AcquireResource
-    NavigateToTransfer
-  Sequence
-    NavigateToStaging
-    WaitForResource
-    AcquireResource
-    NavigateToTransfer
+upstream unload into transfer:
+  buffer item at transfer
+  move to upstream_exit
+  release transfer occupancy and lease
+  mark upstream task succeeded
 ```
 
 ---
 
-## 7. RuntimeWorld
+## Resource Access
 
-`world.py` owns the runtime world model.
+`WorldResourceManager.request_access(...)` is the resource-access gate.
 
-Main types:
-
-```text
-RuntimeWorld
-WorldRobotState
-WorldItemState
-WorldRobotStatus
-```
-
-Robot state includes:
+Current transfer rules:
 
 ```text
-robot_id
-location
-status
-active_task_id
-```
-
-Item state includes:
-
-```text
-item_id
-location
-carried_by
-```
-
-`RuntimeWorld` provides operations for:
-
-* checking robot availability
-* checking item location
-* assigning/releasing robots
-* moving robots
-* loading/unloading items
-* acquiring/releasing resources through `WorldResourceManager`
-* buffering/releasing items in resources
-
----
-
-## 8. Resources
-
-`resources.py` defines generic resources.
-
-Main types:
-
-```text
-ResourceType
-ResourceReservationStatus
-ResourceReservation
-ResourceState
-```
-
-The default transfer resource is:
-
-```text
-resource_id = transfer
-resource_type = TRANSFER_ZONE
-robot_capacity = 1
-package_capacity = 1
-```
-
-`ResourceState` tracks:
-
-```text
-robot_occupancy
-package_occupancy
-reservations
-```
-
-The capacity helpers are:
-
-```text
-robot_slots_available
-package_slots_available
-```
-
-These replace fixed transfer assumptions with resource capacity checks.
-
-`WorldResourceManager` applies these rules:
-
-```text
-dropoff:
+dropoff into transfer:
+  no other active lease holder
   robot slot must be available
   package slot must be available
   item_id must be present
 
-pickup:
+pickup from transfer:
+  no other active lease holder
   robot slot must be available
-  package occupancy must be non-empty
+  requested item must already be buffered in transfer
 ```
 
-Reservations exist in the model, but the current task runner primarily uses
-occupancy and buffer state. Reservation lifecycle can be expanded when concurrent
-task execution requires stronger claims before navigation.
+If access is granted:
+
+```text
+status = GRANTED
+target = transfer
+active_lease = robot / task / purpose / package
+```
+
+If access is unavailable and the robot has a configured wait waypoint:
+
+```text
+status = WAIT
+target = upstream_exit or downstream_exit
+reason = PACKAGE_NOT_AVAILABLE | TRANSFER_PACKAGE_FULL | TRANSFER_ROBOT_OCCUPIED | ...
+```
+
+If access cannot be granted and no wait target exists:
+
+```text
+status = BLOCKED
+```
+
+The BT handles `WAIT` by moving the robot to its directional wait waypoint,
+marking the task as blocked, and retrying resource access when the mission
+advances.
+
+The resource state tracks:
+
+```text
+active_lease
+robot_occupancy
+package_occupancy
+wait_waypoints
+reservations
+```
+
+Reservations still exist in the model, but `active_lease` plus occupancy is the
+current coordination mechanism.
 
 ---
 
-## 9. Execution Commands
+## ROS, RMF, And Execution Boundary
 
-`execution.py` defines concrete work commands.
+`MissionManagerNode` is the ROS shell.
 
-Main types:
-
-```text
-ExecutionCommandType
-ExecutionCommandStatus
-ExecutionCommand
-ExecutionManager
-```
-
-Current command types:
+It subscribes to:
 
 ```text
-MOVE_ROBOT
-HANDLE_ITEM
+mission_commands
+task_api_responses
+task_summaries
+fleet_states
+mission_execution_results
 ```
 
-Command statuses:
+It publishes:
 
 ```text
-PENDING
-SUBMITTED
-RUNNING
-SUCCEEDED
-FAILED
-CANCELLED
+task_api_requests
+mission_state
+mission_execution_commands
 ```
 
-The task runner creates commands through `ExecutionManager`.
-
-`MOVE_ROBOT` is executed by RMF.
-
-`HANDLE_ITEM` is simulated by a ROS timer for now.
-
----
-
-## 10. RMF Execution Adapter
-
-`rmf_execution_adapter.py` converts movement commands into RMF task API
-requests.
-
-It handles:
+Command dispatch:
 
 ```text
-ExecutionCommand(MOVE_ROBOT)
-  -> RMF robot_task_request
+MOVE_ROBOT:
+  publish mission_execution_commands context
+  RmfExecutionAdapter.submit_command(...)
+  publish robot_task_request to task_api_requests
+
+HANDLE_ITEM:
+  start a 5 second ROS timer
+  complete the command when the timer fires
 ```
 
-It tracks:
+`RmfExecutionAdapter` converts movement commands into RMF
+`robot_task_request` payloads. Movement is currently requested as a composed
+`go_to_place` task:
+
+```text
+category = compose
+phase activity = go_to_place
+target waypoint = command.target
+```
+
+The adapter tracks:
 
 ```text
 request_id -> command_id
@@ -528,196 +409,149 @@ rmf_task_id -> command_id
 completed_rmf_task_ids
 ```
 
-When RMF reports task completion, the node asks:
+---
+
+## Movement Completion Paths
+
+Movement completion can reach the mission manager through multiple paths.
+
+Primary path:
 
 ```text
-command_from_completed_task(rmf_task_id)
+MissionManagerNode publishes mission_execution_commands
+free_fleet Nav2 adapter attaches the command context to the next navigation goal
+Nav2 reports the goal succeeded
+free_fleet Nav2 adapter publishes mission_execution_results
+MissionManagerNode calls mission_manager.complete_command(command_id)
 ```
 
-and receives the command ID to complete in the orchestrator.
+Fallback paths:
 
-The adapter does not translate RMF completions into mission events. It only maps
-RMF execution back to command lifecycle.
+```text
+task_summaries:
+  RMF task summary reports STATE_COMPLETED
+  mission node maps rmf_task_id -> command_id
+
+fleet_states:
+  robot is no longer moving and is at the command target
+  or robot.task_id no longer matches the tracked RMF task
+```
+
+The fallback paths remain because RMF task summaries and fleet state timing can
+vary during physical integration.
+
+Expected direct completion logs:
+
+```text
+Published mission execution result: {... "status": "SUCCEEDED", "source": "nav2_result" ...}
+Mission command completed from nav2_result: cmd_X
+```
 
 ---
 
-## 11. Handling Timer
-
-Loading and unloading are represented as `HANDLE_ITEM` execution commands.
-
-The current implementation is simulated:
-
-```text
-HANDLE_ITEM command
-  -> MissionManagerNode starts 5 second ROS timer
-  -> timer fires
-  -> MissionManagerNode calls orchestrator.complete_command(command_id)
-```
-
-When a load command completes:
-
-```text
-item.carried_by = robot_id
-item.location = robot current location
-```
-
-When an unload command completes:
-
-```text
-item.carried_by = None
-item.location = task dropoff
-```
-
-If the dropoff is a resource such as `transfer`, the item is buffered there and
-robot occupancy is released.
-
-Later, a real robot/hardware confirmation can complete the same `HANDLE_ITEM`
-command instead of the timer.
-
----
-
-## 12. End-To-End Workflow
+## End-to-End Package Flow
 
 Initial state:
 
 ```text
-mission status = READY
+mission = READY
 P1.location = source
 tb3_1.location = robot1_home
 tb3_2.location = robot2_home
 transfer.robot_occupancy = []
 transfer.package_occupancy = []
+transfer.active_lease = None
 ```
 
-The operator starts the mission:
+Normal one-package flow:
 
 ```text
-MissionManagerNode
-  -> MissionOrchestrator.start()
+1. Scheduler starts P1:source_to_transfer.
+2. tb3_1 moves to source.
+3. tb3_1 loads P1.
+4. tb3_1 requests transfer dropoff access.
+5. If transfer is free, tb3_1 moves to transfer via upstream_exit.
+6. If transfer is blocked, tb3_1 waits at upstream_exit with a blocked reason.
+7. tb3_1 unloads P1 at transfer.
+8. P1 is buffered in transfer.
+9. tb3_1 moves to upstream_exit.
+10. Transfer occupancy and lease are released.
+11. P1:source_to_transfer succeeds.
+12. Scheduler starts or resumes P1:transfer_to_destination.
+13. tb3_2 requests transfer pickup access.
+14. If P1 is buffered and transfer is free, tb3_2 enters transfer via downstream_exit.
+15. Otherwise tb3_2 waits at downstream_exit with a blocked reason.
+16. tb3_2 loads P1.
+17. P1 is removed from transfer buffer.
+18. tb3_2 moves to downstream_exit.
+19. Transfer occupancy and lease are released.
+20. tb3_2 moves to destination.
+21. tb3_2 unloads P1.
+22. P1:transfer_to_destination succeeds.
+23. Mission completes when all transport tasks succeed.
 ```
 
-The orchestrator marks the mission running and asks the scheduler for a ready
-task.
-
-The scheduler selects:
-
-```text
-P1:source_to_transfer
-```
-
-The task runner starts the task. Since `tb3_1` starts at `robot1_home`, it emits:
-
-```text
-MOVE_ROBOT(tb3_1, source)
-```
-
-After RMF reports that movement complete, the task runner emits:
-
-```text
-HANDLE_ITEM(load P1 with tb3_1)
-```
-
-The node starts a handling timer. When it fires:
-
-```text
-orchestrator.complete_command(load_command_id)
-```
-
-The task runner updates:
-
-```text
-P1.carried_by = tb3_1
-```
-
-Then it acquires the transfer resource for dropoff and emits:
-
-```text
-MOVE_ROBOT(tb3_1, transfer)
-```
-
-RMF executes the movement. When RMF reports completion, the node maps the RMF
-task ID back to the command ID and calls:
-
-```text
-orchestrator.complete_command(move_command_id)
-```
-
-The task runner updates:
-
-```text
-tb3_1.location = transfer
-```
-
-Then it emits:
-
-```text
-HANDLE_ITEM(unload P1 from tb3_1)
-```
-
-When the unload timer completes:
-
-```text
-P1.location = transfer
-P1.carried_by = None
-transfer.package_occupancy = [P1]
-transfer.robot_occupancy = []
-P1:source_to_transfer.status = SUCCEEDED
-```
-
-The orchestrator ticks again. The scheduler now sees that `P1` is at `transfer`
-and selects:
-
-```text
-P1:transfer_to_destination
-```
-
-The downstream task moves `tb3_2` to transfer, loads `P1`, moves to destination,
-and unloads it.
-
-Final state:
-
-```text
-P1.location = destination
-P1.carried_by = None
-all transportItem tasks = SUCCEEDED
-mission status = COMPLETED
-```
+Current mission completion does not explicitly send robots home. Return-home
+behavior should be added as explicit mission-layer behavior if needed.
 
 ---
 
-## 13. Current Extension Points
+## Current Design Constraints
 
-The current implementation is intentionally small, but the boundaries are in
-place:
-
-* `TransportTaskScheduler` can be replaced with priority, allocation, or planner
-  output.
-* `TransportTaskRunner` can be replaced by or wrapped with a behavior tree
-  executor.
-* `WorldResourceManager` can grow stronger reservation and concurrency rules.
-* `RmfExecutionAdapter` can add cancellation/failure handling and richer command
-  types.
-* `HANDLE_ITEM` timers can be replaced by real load/unload confirmations.
-
-The current architecture is designed around a clear split:
+The mission layer controls logical mission rules:
 
 ```text
-Mission policy:
-  MissionOrchestrator, TransportTaskScheduler, TransportTaskRunner
-
-World truth:
-  RuntimeWorld, WorldResourceManager, ResourceState
-
-Execution lifecycle:
-  ExecutionManager, ExecutionCommand
-
-External adapters:
-  MissionManagerNode, RmfExecutionAdapter, handling timers
-
-State output:
-  mission_serializer.py
+which task can start
+whether a robot may enter transfer
+whether a package is available for pickup
+which directional wait point a robot should use
+when a task succeeds
 ```
 
-The important rule is that mission decisions happen in the core runtime, while
-ROS and RMF are adapters around that core. This keeps the mission logic testable
-without running ROS and keeps RMF task IDs out of the task model.
+RMF controls traffic and navigation execution:
+
+```text
+route planning on the RMF graph
+traffic negotiation
+robot task execution
+fleet state reporting
+Nav2 command dispatch through free_fleet
+```
+
+Those layers are complementary. RMF does not understand the package-transfer
+rule unless the mission layer, RMF graph design, mutexes, or task definitions
+encode it.
+
+The current mission world is still optimistic for package handling: it updates
+item state when simulated handling timers complete. It does not yet verify
+physical package pickup/dropoff.
+
+---
+
+## Extension Points
+
+Current extension points:
+
+```text
+TransportTaskScheduler:
+  priority, fairness, robot allocation, pre-staging policy
+
+TransportTaskBtRunner:
+  richer task behavior, retry/recovery, alternative BT backend
+
+WorldResourceManager:
+  queues, stronger lease arbitration, timeouts
+
+RmfExecutionAdapter:
+  cancellation, failure handling, richer RMF task types
+
+MissionManagerNode:
+  replace handling timers with real robot/hardware confirmations
+  strengthen execution-result failure/cancellation handling
+
+MissionManager:
+  explicit return-home behavior, pause/resume/abort semantics
+```
+
+See `docs/mission_layer_strengthening_suggestions.md` for recommended next
+improvements.

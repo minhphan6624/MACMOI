@@ -1,7 +1,7 @@
 from setuptools import find_packages
 from setuptools import setup
 
-package_name = "mrd_mission_manager"
+package_name = "mission_manager"
 
 setup(
     name=package_name,
@@ -19,7 +19,7 @@ setup(
     license="Apache License 2.0",
     entry_points={
         "console_scripts": [
-            "mission_manager_node = mrd_mission_manager.mission_manager_node:main",
+            "mission_manager_node = mission_manager.mission_manager_node:main",
         ],
     },
 )

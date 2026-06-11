@@ -421,7 +421,7 @@ resource settings, not as new hardcoded behavior.
 Create the new in-process runtime modules without switching the ROS node first:
 
 ```text
-MissionOrchestrator
+MissionManager
 RuntimeWorld
 TransportTaskScheduler
 ExecutionManager

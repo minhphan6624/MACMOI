@@ -32,24 +32,28 @@ class RmfExecutionAdapter:
         if command.command_type != ExecutionCommandType.MOVE_ROBOT or command.target is None:
             raise ValueError(f"Unsupported RMF execution command: {command}")
 
-        robot = world.robots[command.robot_id]
-        places = [command.target]
-        if robot.location != command.target:
-            places = [robot.location, command.target]
-
         return {
             "type": "robot_task_request",
             "robot": command.robot_id,
             "fleet": self.config.fleet_name,
             "request": {
-                "category": "patrol",
+                "category": "compose",
                 "fleet_name": self.config.fleet_name,
                 "description": {
-                    "places": places,
-                    "rounds": 1,
+                    "category": "go_to_place",
+                    "phases": [
+                        {
+                            "activity": {
+                                "category": "go_to_place",
+                                "description": {
+                                    "one_of": [{"waypoint": command.target}],
+                                },
+                            },
+                        }
+                    ],
                 },
                 "labels": [
-                    "app=mrd_mission_manager",
+                    "app=mission_manager",
                     f"command_id={command.command_id}",
                     f"task_id={command.task_id}",
                 ],

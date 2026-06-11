@@ -5,3 +5,5 @@ __pycache__
 .codex
 .venv
 *.pdf
+/web/
+/rmf_ws/src/free_fleet/

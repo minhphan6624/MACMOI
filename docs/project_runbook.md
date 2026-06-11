@@ -87,7 +87,8 @@ Current waypoint meaning:
 robot1_home = tb3_1 charger/home
 robot2_home = tb3_2 charger/home
 source = source
-staging = staging
+upstream_exit = tb3_1 directional wait/clear point near transfer
+downstream_exit = tb3_2 directional wait/clear point near transfer
 transfer = transfer
 destination = destination
 ```
@@ -96,12 +97,11 @@ Current traffic graph:
 
 ```text
 robot1_home <-> source
-robot1_home <-> staging
-robot2_home <-> staging
-robot2_home <-> transfer
-source <-> transfer
-staging <-> transfer
-transfer <-> destination
+source <-> upstream_exit
+upstream_exit <-> transfer      mutex: transfer_zone
+transfer <-> downstream_exit    mutex: transfer_zone
+downstream_exit <-> destination
+destination <-> robot2_home
 ```
 
 Only `robot1_home` and `robot2_home` should be marked as chargers.
@@ -197,7 +197,7 @@ ROS shell around the refactored task-flow mission runtime:
 
 ```text
 MissionManagerNode
-  -> MissionOrchestrator
+  -> MissionManager
   -> TransportTaskScheduler
   -> TransportTaskRunner
   -> ExecutionManager
@@ -205,7 +205,10 @@ MissionManagerNode
 ```
 
 The node publishes RMF movement requests for `MOVE_ROBOT` commands and uses a
-short simulated timer for `HANDLE_ITEM` load/unload commands.
+short simulated timer for `HANDLE_ITEM` load/unload commands. Movement requests
+are sent to RMF as composed `go_to_place` robot tasks. The mission node also
+publishes `mission_execution_commands` so the Free Fleet Nav2 adapter can report
+direct completion on `mission_execution_results`.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -213,7 +216,7 @@ source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 run mrd_mission_manager mission_manager_node \
+ros2 run mission_manager mission_manager_node \
   --ros-args \
   -p mission_id:=m1 \
   -p total_packages:=3 \
@@ -249,18 +252,20 @@ Expected command flow for one package:
 ```text
 tb3_1 move robot1_home -> source through RMF
 tb3_1 load P1 at source
-tb3_1 move source -> transfer through RMF
+tb3_1 move source -> upstream_exit -> transfer through RMF
 tb3_1 unload P1 into the transfer buffer
-tb3_2 move robot2_home -> transfer through RMF
+tb3_1 move transfer -> upstream_exit and release transfer
+tb3_2 move robot2_home -> destination -> downstream_exit -> transfer through RMF
 tb3_2 load P1 from the transfer buffer
-tb3_2 move transfer -> destination through RMF
+tb3_2 move transfer -> downstream_exit and release transfer
+tb3_2 move downstream_exit -> destination through RMF
 tb3_2 unload P1 at destination
 mission status -> completed
 ```
 
 If the transfer resource is occupied when a task needs it, the task runner sends
-the robot to `staging`, marks the task blocked, and retries the transfer
-resource on the next runtime tick.
+the robot to its directional wait point, marks the task blocked, and retries the
+transfer resource when mission state changes.
 
 Monitor the runtime state:
 
@@ -273,6 +278,15 @@ ros2 topic echo /mission_state std_msgs/msg/String \
 The `mission_state` JSON includes mission status, package locations, robot
 states, resources, transport tasks, execution commands, active RMF task IDs, and
 active handling timers.
+
+Useful execution-completion logs:
+
+```text
+Published mission execution result: ...
+Mission command completed from nav2_result: cmd_X
+Mission command completed from fleet_state_target_pose: cmd_X
+Mission command completed from task_summary: cmd_X
+```
 
 # 3. Optional: Web UI Run
 
@@ -393,6 +407,7 @@ or diagnosing a problem.
 ros2 topic list --no-daemon
 ros2 topic echo /fleet_states rmf_fleet_msgs/msg/FleetState
 ros2 topic echo /mission_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local
+ros2 topic echo /mission_execution_results std_msgs/msg/String
 ```
 
 ## 5.2. Direct Zenoh/Nav2 Goal
@@ -417,7 +432,8 @@ Current estimated Nav2 map-frame coordinates:
 robot1_home -> [ 2.1766,  2.1308]
 robot2_home -> [-2.7358,  2.2426]
 source      -> [ 2.3845,  0.7899]
-staging     -> [-0.5594,  2.0784]
+upstream_exit   -> [approx. source-side transfer wait point]
+downstream_exit -> [approx. destination-side transfer wait point]
 transfer    -> [-0.4699,  0.1098]
 destination -> [-3.3064,  0.9062]
 ```
@@ -425,27 +441,29 @@ destination -> [-3.3064,  0.9062]
 These are derived from the previous RMF-to-Nav2 transform. Replace them with
 measured Nav2 coordinates if robot positions appear offset.
 
-## 5.3. Dispatch Manual RMF Patrols
+## 5.3. Dispatch Manual RMF Go-To-Place Tasks
 
 Run after both robots are visible in `/fleet_states`:
 
 ```bash
-ros2 run rmf_demos_tasks dispatch_patrol \
+ros2 run rmf_demos_tasks dispatch_go_to_place \
   -F tb3_lab \
   -R tb3_1 \
-  -p source transfer \
-  -n 1 \
+  -p source \
   -st 0
 ```
 
 ```bash
-ros2 run rmf_demos_tasks dispatch_patrol \
+ros2 run rmf_demos_tasks dispatch_go_to_place \
   -F tb3_lab \
   -R tb3_2 \
-  -p staging transfer \
-  -n 1 \
+  -p downstream_exit \
   -st 0
 ```
+
+Use patrol tasks only when you intentionally want loop/patrol semantics. The
+mission layer uses composed `go_to_place` requests for one-shot movement
+commands.
 
 ## 5.4. Mission Runtime Checks
 
@@ -455,17 +473,17 @@ source /opt/ros/jazzy/setup.bash
 source rmf_ws/.venv/bin/activate
 source rmf_ws/install/setup.bash
 
-PYTHONPATH=rmf_ws/src/mrd_mission_manager \
-python3 -m py_compile rmf_ws/src/mrd_mission_manager/mrd_mission_manager/*.py
+PYTHONPATH=rmf_ws/src/mission_manager \
+python3 -m py_compile rmf_ws/src/mission_manager/mission_manager/*.py
 ```
 
 Run a one-package runtime smoke check without ROS:
 
 ```bash
-PYTHONPATH=rmf_ws/src/mrd_mission_manager python3 - <<'PY'
-from mrd_mission_manager.orchestrator import MissionOrchestrator
+PYTHONPATH=rmf_ws/src/mission_manager python3 - <<'PY'
+from mission_manager.mission_manager import MissionManager
 
-orch = MissionOrchestrator.create_default("smoke", 1)
+orch = MissionManager.create_default("smoke", 1)
 commands = orch.start()
 while commands:
     commands = orch.complete_command(commands[0].command_id)
