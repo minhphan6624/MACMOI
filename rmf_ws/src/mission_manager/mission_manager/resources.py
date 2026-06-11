@@ -1,8 +1,12 @@
 from dataclasses import dataclass, field
 from enum import Enum
 
+# Classes for resource-related states/attributes 
+# In this case, resources are constraint-zones
 
 class ResourceAccessStatus(Enum):
+    """Result of a request to use a managed mission resource."""
+
     GRANTED = "GRANTED"
     WAIT = "WAIT"
     BLOCKED = "BLOCKED"
@@ -10,6 +14,8 @@ class ResourceAccessStatus(Enum):
 
 @dataclass
 class ResourceLease:
+    """Temporary permission for one actor to use a managed resource."""
+
     resource_id: str
     task_id: str
     actor_id: str
@@ -19,6 +25,8 @@ class ResourceLease:
 
 @dataclass
 class ResourceAccessDecision:
+    """Resource access response with optional wait/block explanation."""
+
     status: ResourceAccessStatus
     target: str | None = None
     reason: str | None = None
@@ -27,6 +35,8 @@ class ResourceAccessDecision:
 
 @dataclass
 class ResourceState:
+    """Mission-layer state for a constrained shared resource."""
+
     resource_id: str
     robot_capacity: int = 1
     package_capacity: int = 0

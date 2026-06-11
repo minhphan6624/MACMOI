@@ -6,7 +6,9 @@ from .resources import (
 )
 
 
-class WorldResourceManager:
+class ResourceManager:
+    """Applies access, lease, occupancy, and package-buffer rules."""
+
     def __init__(self, resources: dict[str, ResourceState]):
         self.resources = resources
 

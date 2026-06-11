@@ -16,18 +16,22 @@ from .mission_tasks import MissionStatus, MissionTaskStatus, TransportItemTask
 from .resources import ResourceState
 from .scheduler import TransportTaskScheduler
 from .transport_bt_runner import TransportTaskBtRunner
-from .world import RuntimeWorld, WorldItemState, WorldRobotState
+from .world import MissionWorld, PackageState, RobotState
 
 
 @dataclass
 class MissionRuntime:
+    """In-memory state for one active mission run."""
+
     mission_id: str
     status: MissionStatus
     tasks: dict[str, TransportItemTask]
-    world: RuntimeWorld
+    world: MissionWorld
 
 
 class MissionManager:
+    """Coordinates mission lifecycle, task scheduling, and command completion."""
+
     def __init__(
         self,
         runtime: MissionRuntime,
@@ -49,9 +53,12 @@ class MissionManager:
     ):
         tasks = {}
         items = {}
+        
         for index in range(1, total_packages + 1):
+            
             item_id = f"P{index}"
-            items[item_id] = WorldItemState(item_id, SOURCE_WAYPOINT)
+            items[item_id] = PackageState(item_id, SOURCE_WAYPOINT)
+            
             tasks[f"{item_id}:source_to_transfer"] = TransportItemTask(
                 task_id=f"{item_id}:source_to_transfer",
                 item_id=item_id,
@@ -59,6 +66,7 @@ class MissionManager:
                 dropoff=TRANSFER_WAYPOINT,
                 robot_id=upstream_robot,
             )
+
             tasks[f"{item_id}:transfer_to_destination"] = TransportItemTask(
                 task_id=f"{item_id}:transfer_to_destination",
                 item_id=item_id,
@@ -67,10 +75,10 @@ class MissionManager:
                 robot_id=downstream_robot,
             )
 
-        world = RuntimeWorld(
+        world = MissionWorld(
             robots={
-                upstream_robot: WorldRobotState(upstream_robot, UPSTREAM_HOME_WAYPOINT),
-                downstream_robot: WorldRobotState(downstream_robot, DOWNSTREAM_HOME_WAYPOINT),
+                upstream_robot: RobotState(upstream_robot, UPSTREAM_HOME_WAYPOINT),
+                downstream_robot: RobotState(downstream_robot, DOWNSTREAM_HOME_WAYPOINT),
             },
             items=items,
             resources={
@@ -88,6 +96,7 @@ class MissionManager:
         return cls(MissionRuntime(mission_id, MissionStatus.READY, tasks, world))
 
     def start(self) -> list[ExecutionCommand]:
+
         if self.runtime.status == MissionStatus.READY:
             self.runtime.status = MissionStatus.RUNNING
 
@@ -114,15 +123,20 @@ class MissionManager:
         return self.task_runner.start(task)
 
     def complete_command(self, command_id: str) -> list[ExecutionCommand]:
+        
         if command_id not in self.execution.commands:
             return []
+        
         command = self.execution.commands[command_id]
         if not self.execution.mark_succeeded(command_id):
             return []
+        
         task = self.runtime.tasks.get(command.task_id)
         if task is None:
             return []
+        
         commands = self.task_runner.handle_command_succeeded(task, command)
+        
         return self._with_next_ready_task(commands) if commands else self.tick()
 
     def _with_next_ready_task(self, commands: list[ExecutionCommand]) -> list[ExecutionCommand]:

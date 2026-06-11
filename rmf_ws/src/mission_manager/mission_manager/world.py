@@ -2,45 +2,54 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .resources import ResourceState
-from .world_resource_manager import WorldResourceManager
+from .world_resource_manager import ResourceManager
 
+# Everything state-related for components in the "world"
 
-class WorldRobotStatus(Enum):
+class RobotStatus(Enum):
+    """Robot availability from the mission scheduler's point of view."""
+    
     IDLE = "IDLE"
     BUSY = "BUSY"
     WAITING = "WAITING"
 
 
 @dataclass
-class WorldRobotState:
+class RobotState:
+    """Mission-layer robot state, not raw RMF or Nav2 telemetry."""
+
     robot_id: str
     location: str
-    status: WorldRobotStatus = WorldRobotStatus.IDLE
+    status: RobotStatus = RobotStatus.IDLE
     active_task_id: str | None = None
 
 
 @dataclass
-class WorldItemState:
+class PackageState:
+    """Mission-layer package location and carrier state."""
+
     item_id: str
     location: str
     carried_by: str | None = None
 
 
-class RuntimeWorld:
+class MissionWorld:
+    """Mission-layer belief state for robots, packages, and managed resources."""
+
     def __init__(
         self,
-        robots: dict[str, WorldRobotState],
-        items: dict[str, WorldItemState],
+        robots: dict[str, RobotState],
+        items: dict[str, PackageState],
         resources: dict[str, ResourceState],
     ):
         self.robots = robots
         self.items = items
         self.resources = resources
-        self.resources_manager = WorldResourceManager(resources)
+        self.resources_manager = ResourceManager(resources)
 
     def is_robot_available(self, robot_id: str) -> bool:
         robot = self.robots.get(robot_id)
-        return robot is not None and robot.status == WorldRobotStatus.IDLE
+        return robot is not None and robot.status == RobotStatus.IDLE
 
     def is_item_at(self, item_id: str, location: str) -> bool:
         item = self.items.get(item_id)
@@ -48,17 +57,17 @@ class RuntimeWorld:
 
     def assign_robot(self, robot_id: str, task_id: str) -> None:
         robot = self.robots[robot_id]
-        robot.status = WorldRobotStatus.BUSY
+        robot.status = RobotStatus.BUSY
         robot.active_task_id = task_id
 
     def release_robot(self, robot_id: str) -> None:
         robot = self.robots[robot_id]
-        robot.status = WorldRobotStatus.IDLE
+        robot.status = RobotStatus.IDLE
         robot.active_task_id = None
 
     def mark_robot_waiting(self, robot_id: str, task_id: str) -> None:
         robot = self.robots[robot_id]
-        robot.status = WorldRobotStatus.WAITING
+        robot.status = RobotStatus.WAITING
         robot.active_task_id = task_id
 
     def move_robot(self, robot_id: str, location: str) -> None:

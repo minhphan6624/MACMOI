@@ -30,6 +30,8 @@ from .rmf_execution_adapter import RmfExecutionAdapter, RmfExecutionAdapterConfi
 
 
 class MissionManagerNode(Node):
+    """ROS node that connects mission logic to RMF, Free Fleet, and topics."""
+
     WAYPOINTS = {
         TRANSFER_WAYPOINT: {"index": 1, "position": (12.942662582931954, -5.815638350433473)},
         DESTINATION_WAYPOINT: {"index": 2, "position": (9.897501485095004, -5.772506176387456)},

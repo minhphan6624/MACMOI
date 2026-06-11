@@ -5,16 +5,20 @@ from uuid import uuid4
 
 from .execution import ExecutionCommand, ExecutionCommandType
 from .mission_definition import FLEET_NAME, REQUESTER
-from .world import RuntimeWorld
+from .world import MissionWorld
 
 
 @dataclass(frozen=True)
 class RmfExecutionAdapterConfig:
+    """Configuration for RMF task API requests emitted by the mission layer."""
+
     fleet_name: str = FLEET_NAME
     requester: str = REQUESTER
 
 
 class RmfExecutionAdapter:
+    """Converts mission execution commands to RMF task API requests."""
+
     def __init__(
         self,
         config: RmfExecutionAdapterConfig | None = None,
@@ -28,7 +32,7 @@ class RmfExecutionAdapter:
         self.command_context_by_rmf_task_id: dict[str, str] = {}
         self.completed_rmf_task_ids: set[str] = set()
 
-    def build_payload(self, command: ExecutionCommand, world: RuntimeWorld) -> dict[str, Any]:
+    def build_payload(self, command: ExecutionCommand, world: MissionWorld) -> dict[str, Any]:
         if command.command_type != ExecutionCommandType.MOVE_ROBOT or command.target is None:
             raise ValueError(f"Unsupported RMF execution command: {command}")
 
@@ -61,7 +65,7 @@ class RmfExecutionAdapter:
             },
         }
 
-    def submit_command(self, command: ExecutionCommand, world: RuntimeWorld) -> str:
+    def submit_command(self, command: ExecutionCommand, world: MissionWorld) -> str:
         request_id = f"mission_{uuid4()}"
         payload = self.build_payload(command, world)
         self.pending_commands[request_id] = command.command_id

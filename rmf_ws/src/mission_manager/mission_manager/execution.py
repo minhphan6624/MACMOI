@@ -4,11 +4,15 @@ from itertools import count
 
 
 class ExecutionCommandType(Enum):
+    """Kinds of external work the mission layer can request."""
+
     MOVE_ROBOT = "move_robot"
     HANDLE_ITEM = "handle_item"
 
 
 class ExecutionCommandStatus(Enum):
+    """Lifecycle state for a mission execution command."""
+
     PENDING = "PENDING"
     SUBMITTED = "SUBMITTED"
     RUNNING = "RUNNING"
@@ -19,6 +23,8 @@ class ExecutionCommandStatus(Enum):
 
 @dataclass
 class ExecutionCommand:
+    """Command emitted by mission logic for ROS/RMF execution."""
+
     command_id: str
     command_type: ExecutionCommandType
     task_id: str
@@ -31,6 +37,8 @@ class ExecutionCommand:
 
 
 class ExecutionManager:
+    """Creates and tracks execution commands for mission tasks."""
+
     def __init__(self):
         self.commands: dict[str, ExecutionCommand] = {}
         self._counter = count(1)

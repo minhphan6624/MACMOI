@@ -3,33 +3,43 @@ from enum import Enum
 
 from .execution import ExecutionCommand, ExecutionManager
 from .mission_tasks import TransportItemTask
-from .world import RuntimeWorld
+from .world import MissionWorld
 
 
 class BtStatus(Enum):
+    """Behavior-tree tick result status."""
+
     SUCCESS = "SUCCESS"
     RUNNING = "RUNNING"
 
 
 @dataclass
 class BtResult:
+    """Result of ticking a behavior-tree node."""
+
     status: BtStatus
     commands: list[ExecutionCommand] = field(default_factory=list)
 
 
 @dataclass
 class TransportTaskContext:
+    """Shared context passed to transport-task behavior-tree nodes."""
+
     task: TransportItemTask
-    world: RuntimeWorld
+    world: MissionWorld
     execution: ExecutionManager
 
 
 class BtNode:
+    """Base class for behavior-tree nodes."""
+
     def tick(self, ctx: TransportTaskContext) -> BtResult:
         raise NotImplementedError
 
 
 class MemorySequence(BtNode):
+    """Sequence node that resumes from the last running child."""
+
     def __init__(self, node_id: str, children: list[BtNode]):
         self.node_id = node_id
         self.children = children

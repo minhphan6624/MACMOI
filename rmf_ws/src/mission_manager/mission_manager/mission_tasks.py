@@ -3,6 +3,8 @@ from enum import Enum
 
 
 class MissionStatus(Enum):
+    """High-level lifecycle state for one mission run."""
+
     CREATED = "CREATED"
     READY = "READY"
     RUNNING = "RUNNING"
@@ -12,6 +14,8 @@ class MissionStatus(Enum):
 
 
 class MissionTaskStatus(Enum):
+    """Lifecycle state for one mission task instance."""
+
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     BLOCKED = "BLOCKED"
@@ -21,6 +25,8 @@ class MissionTaskStatus(Enum):
 
 
 class TransportTaskPhase(Enum):
+    """Current step inside a transport-item task."""
+
     NOT_STARTED = "NOT_STARTED"
     ACQUIRE_PICKUP = "ACQUIRE_PICKUP"
     MOVE_TO_PICKUP = "MOVE_TO_PICKUP"
@@ -36,6 +42,8 @@ class TransportTaskPhase(Enum):
 
 @dataclass
 class TransportItemTask:
+    """Mission task that moves one package from pickup to dropoff."""
+
     task_id: str
     item_id: str
     pickup: str

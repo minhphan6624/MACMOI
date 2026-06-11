@@ -9,11 +9,13 @@ from .mission_definition import (
 )
 from .mission_tasks import MissionTaskStatus, TransportItemTask, TransportTaskPhase
 from .resources import ResourceAccessStatus
-from .world import RuntimeWorld, WorldRobotStatus
+from .world import MissionWorld, RobotStatus
 
 
 class TransportTaskBtRunner:
-    def __init__(self, world: RuntimeWorld, execution: ExecutionManager):
+    """Runs the behavior-tree sequence for one transport task."""
+
+    def __init__(self, world: MissionWorld, execution: ExecutionManager):
         self.world = world
         self.execution = execution
         self.tree = MemorySequence(
@@ -73,19 +75,26 @@ class TransportTaskBtRunner:
 
 
 class AssignRobot(BtNode):
+    """Claims the task's assigned robot when it is idle."""
+
     def tick(self, ctx: TransportTaskContext) -> BtResult:
         task = ctx.task
         robot = ctx.world.robots[task.robot_id]
+
         if robot.active_task_id == task.task_id:
             return BtResult(BtStatus.SUCCESS)
-        if robot.status != WorldRobotStatus.IDLE:
+        
+        if robot.status != RobotStatus.IDLE:
             return BtResult(BtStatus.RUNNING)
+        
         ctx.world.assign_robot(task.robot_id, task.task_id)
         task.status = MissionTaskStatus.RUNNING
         return BtResult(BtStatus.SUCCESS)
 
 
 class RequestResourceAccess(BtNode):
+    """Requests access to a managed pickup or dropoff resource."""
+
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
 
@@ -191,6 +200,8 @@ class RequestResourceAccess(BtNode):
 
 
 class MoveTo(BtNode):
+    """Emits a move command until the robot reaches the target waypoint."""
+
     def __init__(self, target: str, phase: TransportTaskPhase):
         self.target = target
         self.phase = phase
@@ -211,6 +222,8 @@ class MoveTo(BtNode):
 
 
 class HandleItem(BtNode):
+    """Emits a package load or unload command."""
+
     def __init__(self, handling_type: str, phase: TransportTaskPhase):
         self.handling_type = handling_type
         self.phase = phase
@@ -242,6 +255,8 @@ class HandleItem(BtNode):
 
 
 class MarkResourceOccupied(BtNode):
+    """Marks a managed resource as occupied by the task robot."""
+
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
 
@@ -257,6 +272,8 @@ class MarkResourceOccupied(BtNode):
 
 
 class UpdateResourceAfterHandling(BtNode):
+    """Updates package occupancy after a load or unload at a resource."""
+
     def __init__(self, endpoint: str, handling_type: str):
         self.endpoint = endpoint
         self.handling_type = handling_type
@@ -276,6 +293,8 @@ class UpdateResourceAfterHandling(BtNode):
 
 
 class VacateResourceIfManaged(BtNode):
+    """Moves the robot to its side-specific exit after using a resource."""
+
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
 
@@ -295,6 +314,8 @@ class VacateResourceIfManaged(BtNode):
 
 
 class ReleaseResourceIfManaged(BtNode):
+    """Releases a managed resource lease and robot occupancy."""
+
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
 
@@ -311,12 +332,16 @@ class ReleaseResourceIfManaged(BtNode):
 
 
 class ReleaseRobot(BtNode):
+    """Marks the task robot as idle."""
+
     def tick(self, ctx: TransportTaskContext) -> BtResult:
         ctx.world.release_robot(ctx.task.robot_id)
         return BtResult(BtStatus.SUCCESS)
 
 
 class MarkTaskSucceeded(BtNode):
+    """Marks the transport task as complete."""
+
     def tick(self, ctx: TransportTaskContext) -> BtResult:
         ctx.task.phase = TransportTaskPhase.DONE
         ctx.task.status = MissionTaskStatus.SUCCEEDED
