@@ -20,7 +20,6 @@ class TransportTaskBtRunner:
             "transport_item",
             [
                 AssignRobot(),
-                ApproachResourceIfManaged("pickup"),
                 RequestResourceAccess("pickup"),
                 MoveTo("pickup", TransportTaskPhase.MOVE_TO_PICKUP),
                 MarkResourceOccupied("pickup"),
@@ -28,7 +27,6 @@ class TransportTaskBtRunner:
                 UpdateResourceAfterHandling("pickup", "load"),
                 VacateResourceIfManaged("pickup"),
                 ReleaseResourceIfManaged("pickup"),
-                ApproachResourceIfManaged("dropoff"),
                 RequestResourceAccess("dropoff"),
                 MoveTo("dropoff", TransportTaskPhase.MOVE_TO_DROPOFF),
                 MarkResourceOccupied("dropoff"),
@@ -134,7 +132,7 @@ class RequestResourceAccess(BtNode):
     ) -> BtResult:
         task = ctx.task
         resource_id = getattr(task, self.endpoint)
-        wait_waypoint = transfer_side_waypoint(task.robot_id) or decision.target
+        wait_waypoint = decision.target
         task.waiting_resource_id = resource_id
         task.waiting_purpose = self.endpoint
         self._set_blocked_details(ctx, decision)
@@ -241,22 +239,6 @@ class HandleItem(BtNode):
         )
         task.active_command_id = command.command_id
         return BtResult(BtStatus.RUNNING, [command])
-
-
-class ApproachResourceIfManaged(BtNode):
-    def __init__(self, endpoint: str):
-        self.endpoint = endpoint
-
-    def tick(self, ctx: TransportTaskContext) -> BtResult:
-        task = ctx.task
-        resource_id = getattr(task, self.endpoint)
-        if resource_id not in ctx.world.resources:
-            return BtResult(BtStatus.SUCCESS)
-
-        approach_waypoint = transfer_side_waypoint(task.robot_id)
-        if approach_waypoint is None:
-            return BtResult(BtStatus.SUCCESS)
-        return MoveTo(approach_waypoint, TransportTaskPhase.MOVE_TO_TRANSFER_EXIT).tick(ctx)
 
 
 class MarkResourceOccupied(BtNode):
