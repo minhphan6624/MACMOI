@@ -8,7 +8,6 @@ from .world import RuntimeWorld
 
 class BtStatus(Enum):
     SUCCESS = "SUCCESS"
-    FAILURE = "FAILURE"
     RUNNING = "RUNNING"
 
 
@@ -48,15 +47,3 @@ class MemorySequence(BtNode):
             return result
 
         return BtResult(BtStatus.SUCCESS)
-
-
-class Fallback(BtNode):
-    def __init__(self, children: list[BtNode]):
-        self.children = children
-
-    def tick(self, ctx: TransportTaskContext) -> BtResult:
-        for child in self.children:
-            result = child.tick(ctx)
-            if result.status != BtStatus.FAILURE:
-                return result
-        return BtResult(BtStatus.FAILURE)

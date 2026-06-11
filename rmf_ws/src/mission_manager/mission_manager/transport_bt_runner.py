@@ -142,7 +142,7 @@ class RequestResourceAccess(BtNode):
             return BtResult(BtStatus.RUNNING)
         if ctx.world.robots[task.robot_id].location != wait_waypoint:
             task.status = MissionTaskStatus.RUNNING
-            return MoveTo(wait_waypoint, TransportTaskPhase.MOVE_TO_STAGING).tick(ctx)
+            return MoveTo(wait_waypoint, TransportTaskPhase.MOVE_TO_WAIT_POINT).tick(ctx)
 
         task.phase = TransportTaskPhase.WAIT_FOR_RESOURCE
         task.status = MissionTaskStatus.BLOCKED
@@ -252,7 +252,7 @@ class MarkResourceOccupied(BtNode):
         if resource_id not in ctx.world.resources or not task.bt_blackboard.get(acquired_key):
             return BtResult(BtStatus.SUCCESS)
 
-        ctx.world.occupy_resource(resource_id, task.robot_id)
+        ctx.world.resources_manager.occupy(resource_id, task.robot_id)
         return BtResult(BtStatus.SUCCESS)
 
 
@@ -269,9 +269,9 @@ class UpdateResourceAfterHandling(BtNode):
             return BtResult(BtStatus.SUCCESS)
 
         if self.handling_type == "load":
-            ctx.world.release_item(resource_id, task.item_id)
+            ctx.world.resources_manager.release_item(resource_id, task.item_id)
         elif self.handling_type == "unload":
-            ctx.world.buffer_item(resource_id, task.item_id)
+            ctx.world.resources_manager.buffer_item(resource_id, task.item_id)
         return BtResult(BtStatus.SUCCESS)
 
 
@@ -305,7 +305,7 @@ class ReleaseResourceIfManaged(BtNode):
         if resource_id not in ctx.world.resources or not task.bt_blackboard.get(acquired_key):
             return BtResult(BtStatus.SUCCESS)
 
-        ctx.world.release_resource(resource_id, task.robot_id)
+        ctx.world.resources_manager.release(resource_id, task.robot_id)
         task.bt_blackboard[acquired_key] = False
         return BtResult(BtStatus.SUCCESS)
 

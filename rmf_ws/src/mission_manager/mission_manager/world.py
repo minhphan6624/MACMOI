@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from .resources import ResourceAccessDecision, ResourceState
+from .resources import ResourceState
 from .world_resource_manager import WorldResourceManager
 
 
@@ -74,29 +74,3 @@ class RuntimeWorld:
         if item.carried_by == robot_id:
             item.carried_by = None
         item.location = location
-
-    def can_acquire(
-        self,
-        resource_id: str,
-        actor_id: str,
-        purpose: str,
-        item_id: str | None = None,
-    ) -> bool:
-        return self.resources_manager.can_acquire(
-            resource_id,
-            actor_id,
-            purpose,
-            item_id,
-        )
-
-    def occupy_resource(self, resource_id: str, actor_id: str) -> None:
-        self.resources_manager.occupy(resource_id, actor_id)
-
-    def release_resource(self, resource_id: str, actor_id: str) -> None:
-        self.resources_manager.release(resource_id, actor_id)
-
-    def buffer_item(self, resource_id: str, item_id: str) -> None:
-        self.resources_manager.buffer_item(resource_id, item_id)
-
-    def release_item(self, resource_id: str, item_id: str) -> None:
-        self.resources_manager.release_item(resource_id, item_id)

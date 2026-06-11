@@ -2,30 +2,13 @@ from .resources import (
     ResourceAccessDecision,
     ResourceAccessStatus,
     ResourceLease,
-    ResourceReservation,
     ResourceState,
 )
 
 
 class WorldResourceManager:
-    def __init__(
-        self,
-        resources: dict[str, ResourceState],
-        transfer_resource_id: str = "transfer",
-    ):
+    def __init__(self, resources: dict[str, ResourceState]):
         self.resources = resources
-        self.transfer_resource_id = transfer_resource_id
-
-    def can_acquire(
-        self,
-        resource_id: str,
-        actor_id: str,
-        purpose: str,
-        item_id: str | None = None,
-    ) -> bool:
-        return self.request_access(resource_id, actor_id, purpose, item_id).status == (
-            ResourceAccessStatus.GRANTED
-        )
 
     def request_access(
         self,
@@ -103,27 +86,6 @@ class WorldResourceManager:
             item_id=item_id,
         )
 
-    def reserve(
-        self,
-        resource_id: str,
-        reservation_id: str,
-        owner_id: str,
-        actor_id: str,
-        purpose: str,
-        item_id: str | None = None,
-    ) -> ResourceReservation:
-        reservation = ResourceReservation(
-            reservation_id=reservation_id,
-            resource_id=resource_id,
-            owner_id=owner_id,
-            actor_id=actor_id,
-            purpose=purpose,
-            item_id=item_id,
-        )
-        self.resources[resource_id].reservations[reservation_id] = reservation
-
-        return reservation
-
     def occupy(self, resource_id: str, actor_id: str) -> None:
         resource = self.resources[resource_id]
         if actor_id not in resource.robot_occupancy:
@@ -145,9 +107,3 @@ class WorldResourceManager:
         resource = self.resources[resource_id]
         if item_id in resource.package_occupancy:
             resource.package_occupancy.remove(item_id)
-
-    def set_waiting_actor(self, actor_id: str, item_id: str) -> None:
-        return
-
-    def clear_waiting_actor(self, actor_id: str) -> None:
-        return

@@ -13,7 +13,7 @@ from .mission_definition import (
     UPSTREAM_ROBOT,
 )
 from .mission_tasks import MissionStatus, MissionTaskStatus, TransportItemTask
-from .resources import ResourceState, ResourceType
+from .resources import ResourceState
 from .scheduler import TransportTaskScheduler
 from .transport_bt_runner import TransportTaskBtRunner
 from .world import RuntimeWorld, WorldItemState, WorldRobotState
@@ -58,7 +58,6 @@ class MissionManager:
                 pickup=SOURCE_WAYPOINT,
                 dropoff=TRANSFER_WAYPOINT,
                 robot_id=upstream_robot,
-                required_resources=[TRANSFER_WAYPOINT],
             )
             tasks[f"{item_id}:transfer_to_destination"] = TransportItemTask(
                 task_id=f"{item_id}:transfer_to_destination",
@@ -66,7 +65,6 @@ class MissionManager:
                 pickup=TRANSFER_WAYPOINT,
                 dropoff=DESTINATION_WAYPOINT,
                 robot_id=downstream_robot,
-                required_resources=[TRANSFER_WAYPOINT],
             )
 
         world = RuntimeWorld(
@@ -78,7 +76,6 @@ class MissionManager:
             resources={
                 TRANSFER_WAYPOINT: ResourceState(
                     resource_id=TRANSFER_WAYPOINT,
-                    resource_type=ResourceType.TRANSFER_ZONE,
                     robot_capacity=1,
                     package_capacity=1,
                     wait_waypoints={
