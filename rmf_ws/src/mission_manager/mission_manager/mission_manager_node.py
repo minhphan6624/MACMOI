@@ -1,4 +1,5 @@
 import json
+import math
 
 import rclpy
 from rclpy.node import Node
@@ -10,11 +11,18 @@ from rmf_fleet_msgs.msg import FleetState
 from rmf_task_msgs.msg import ApiRequest, ApiResponse, TaskSummary
 from std_msgs.msg import String
 
-from .execution import ExecutionCommand, ExecutionCommandType
+from .execution import ExecutionCommand, ExecutionCommandStatus, ExecutionCommandType
 from .mission_definition import (
+    DESTINATION_WAYPOINT,
     DOWNSTREAM_ROBOT,
+    DOWNSTREAM_HOME_WAYPOINT,
     FLEET_NAME,
+    SOURCE_WAYPOINT,
+    TRANSFER_DOWNSTREAM_EXIT_WAYPOINT,
+    TRANSFER_UPSTREAM_EXIT_WAYPOINT,
+    TRANSFER_WAYPOINT,
     UPSTREAM_ROBOT,
+    UPSTREAM_HOME_WAYPOINT,
 )
 from .mission_serializer import action_to_dict, event_to_dict, serialize_runtime_mission_state
 from .mission_manager import MissionManager
@@ -22,6 +30,16 @@ from .rmf_execution_adapter import RmfExecutionAdapter, RmfExecutionAdapterConfi
 
 
 class MissionManagerNode(Node):
+    WAYPOINTS = {
+        TRANSFER_WAYPOINT: {"index": 1, "position": (12.942662582931954, -5.815638350433473)},
+        DESTINATION_WAYPOINT: {"index": 2, "position": (9.897501485095004, -5.772506176387456)},
+        SOURCE_WAYPOINT: {"index": 3, "position": (15.633784531333973, -5.781093130945816)},
+        DOWNSTREAM_HOME_WAYPOINT: {"index": 4, "position": (10.706303773928157, -3.710551375482774)},
+        UPSTREAM_HOME_WAYPOINT: {"index": 5, "position": (15.554725329020794, -3.8208986765890605)},
+        TRANSFER_DOWNSTREAM_EXIT_WAYPOINT: {"index": 6, "position": (11.683390631979744, -4.965924651664219)},
+        TRANSFER_UPSTREAM_EXIT_WAYPOINT: {"index": 7, "position": (14.25340691092075, -5.024207371971251)},
+    }
+
     def __init__(self):
         super().__init__("mission_manager")
 
@@ -33,6 +51,7 @@ class MissionManagerNode(Node):
         self.declare_parameter("mission_state_topic", "mission_state")
         self.declare_parameter("mission_commands_topic", "mission_commands")
         self.declare_parameter("enable_fleet_state_completion_fallback", True)
+        self.declare_parameter("target_position_tolerance", 0.35)
 
         mission_id = self.get_parameter("mission_id").value
         total_packages = self.get_parameter("total_packages").value
@@ -99,6 +118,9 @@ class MissionManagerNode(Node):
         self.enable_fleet_state_completion_fallback = bool(
             self.get_parameter("enable_fleet_state_completion_fallback").value
         )
+        self.target_position_tolerance = float(
+            self.get_parameter("target_position_tolerance").value
+        )
 
         if self.get_parameter("auto_start").value:
             self._record_event({"command": "auto_start", "mission_id": mission_id})
@@ -129,14 +151,13 @@ class MissionManagerNode(Node):
             command_id = self.rmf_adapter.command_from_completed_task(task_state.task_id)
             if command_id is None:
                 continue
-            self._record_event(
-                {
-                    "type": "ExecutionCommandCompleted",
-                    "command_id": command_id,
-                    "rmf_task_id": task_state.task_id,
-                }
+            commands.extend(
+                self._complete_execution_command(
+                    command_id,
+                    "task_summary",
+                    task_state.task_id,
+                )
             )
-            commands.extend(self.mission_manager.complete_command(command_id))
         self._dispatch_commands(commands)
 
     def _handle_fleet_state(self, msg: FleetState) -> None:
@@ -152,34 +173,84 @@ class MissionManagerNode(Node):
             self.rmf_adapter.command_context_by_rmf_task_id.items()
         ):
             command = self.mission_manager.execution.commands.get(command_id)
-            if command is None:
+            if command is None or self._is_terminal_command(command):
                 continue
 
             fleet_robot = fleet_robots.get(command.robot_id)
-            if fleet_robot is None or fleet_robot.task_id == rmf_task_id:
+            if fleet_robot is None:
                 continue
 
             mode = fleet_robot.mode
             if mode.mode == mode.MODE_MOVING:
                 continue
 
-            completed_command_id = self.rmf_adapter.command_from_completed_task(rmf_task_id)
+            completion_source = None
+            if self._robot_reached_command_target(fleet_robot, command):
+                completion_source = "fleet_state_target_pose"
+            elif fleet_robot.task_id != rmf_task_id:
+                completion_source = "fleet_state_task_id"
+
+            if completion_source is None:
+                continue
+
+            completed_command_id = self.rmf_adapter.command_from_completed_task(
+                rmf_task_id
+            )
             if completed_command_id is None:
                 continue
-            self._record_event(
-                {
-                    "type": "ExecutionCommandCompleted",
-                    "command_id": completed_command_id,
-                    "rmf_task_id": rmf_task_id,
-                    "source": "fleet_state",
-                }
+            commands.extend(
+                self._complete_execution_command(
+                    completed_command_id,
+                    completion_source,
+                    rmf_task_id,
+                )
             )
-            self.get_logger().info(
-                f"Mission command completed from fleet state: {completed_command_id}"
-            )
-            commands.extend(self.mission_manager.complete_command(completed_command_id))
 
         self._dispatch_commands(commands)
+
+    def _is_terminal_command(self, command: ExecutionCommand) -> bool:
+        return command.status in (
+            ExecutionCommandStatus.SUCCEEDED,
+            ExecutionCommandStatus.FAILED,
+            ExecutionCommandStatus.CANCELLED,
+        )
+
+    def _robot_reached_command_target(self, fleet_robot, command: ExecutionCommand) -> bool:
+        if command.command_type != ExecutionCommandType.MOVE_ROBOT:
+            return False
+        if command.target is None:
+            return False
+
+        waypoint = self.WAYPOINTS.get(command.target)
+        if waypoint is None:
+            return False
+
+        location = fleet_robot.location
+        if int(location.index) == waypoint["index"]:
+            return True
+
+        target_x, target_y = waypoint["position"]
+        distance = math.hypot(location.x - target_x, location.y - target_y)
+        return distance <= self.target_position_tolerance
+
+    def _complete_execution_command(
+        self,
+        command_id: str,
+        source: str,
+        rmf_task_id: str | None = None,
+    ) -> list[ExecutionCommand]:
+        self._record_event(
+            {
+                "type": "ExecutionCommandCompleted",
+                "command_id": command_id,
+                "rmf_task_id": rmf_task_id,
+                "source": source,
+            }
+        )
+        self.get_logger().info(
+            f"Mission command completed from {source}: {command_id}"
+        )
+        return self.mission_manager.complete_command(command_id)
 
     def _handle_mission_command(self, msg: String) -> None:
         try:
@@ -233,6 +304,9 @@ class MissionManagerNode(Node):
                     "command_id": command.command_id,
                     "source": "handling_timer",
                 }
+            )
+            self.get_logger().info(
+                f"Mission command completed from handling_timer: {command.command_id}"
             )
             self._dispatch_commands(self.mission_manager.complete_command(command.command_id))
 
