@@ -348,11 +348,9 @@ active_lease
 robot_occupancy
 package_occupancy
 wait_waypoints
-reservations
 ```
 
-Reservations still exist in the model, but `active_lease` plus occupancy is the
-current coordination mechanism.
+`active_lease` plus occupancy is the current coordination mechanism.
 
 ---
 
