@@ -3,101 +3,41 @@ doors: {}
 levels:
   LG:
     lanes:
-    - - 0
-      - 1
-      - {mutex: transfer_zone}
-    - - 1
-      - 0
-      - {mutex: transfer_zone}
-    - - 1
-      - 2
-      - {mutex: transfer_zone}
-    - - 2
-      - 1
-      - {mutex: transfer_zone}
-    - - 1
-      - 3
-      - {mutex: transfer_zone}
-    - - 3
-      - 1
-      - {mutex: transfer_zone}
-    - - 4
-      - 0
-      - {}
-    - - 0
-      - 4
-      - {}
-    - - 4
-      - 1
-      - {mutex: transfer_zone}
-    - - 1
-      - 4
-      - {mutex: transfer_zone}
     - - 5
       - 3
       - {}
     - - 3
       - 5
       - {}
-    - - 5
-      - 0
+    - - 3
+      - 7
       - {}
-    - - 0
-      - 5
+    - - 7
+      - 3
       - {}
-    - - 2
-      - 4
-      - {}
-    - - 4
-      - 2
-      - {}
-    - - 0
-      - 2
-      - {}
-    - - 2
-      - 0
-      - {}
+    - - 7
+      - 1
+      - {mutex: transfer_zone}
     - - 1
-      - 5
-      - {mutex: transfer_zone}
-    - - 5
-      - 1
-      - {mutex: transfer_zone}
-    - - 6
-      - 1
+      - 7
       - {mutex: transfer_zone}
     - - 1
       - 6
       - {mutex: transfer_zone}
-    - - 1
-      - 7
-      - {mutex: transfer_zone}
-    - - 7
+    - - 6
       - 1
       - {mutex: transfer_zone}
-    - - 7
-      - 3
-      - {}
-    - - 3
-      - 7
-      - {}
     - - 6
       - 2
       - {}
     - - 2
       - 6
       - {}
-    - - 3
-      - 0
+    - - 2
+      - 4
       - {}
-    - - 0
-      - 3
-      - {}
-    - - 0
-      - 7
-      - {}
-    - - 7
-      - 0
+    - - 4
+      - 2
       - {}
     vertices:
     - - 12.984314247571357
@@ -118,10 +58,10 @@ levels:
     - - 15.554725329020794
       - -3.8208986765890605
       - {is_charger: true, name: robot1_home}
-    - - 11.552464250121535
-      - -5.789482684249961
+    - - 11.683390631979744
+      - -4.965924651664219
       - {name: downstream_exit}
-    - - 14.244869306675955
-      - -5.783906098818382
+    - - 14.25340691092075
+      - -5.024207371971251
       - {name: upstream_exit}
 lifts: {}
