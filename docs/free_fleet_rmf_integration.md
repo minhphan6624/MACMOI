@@ -174,6 +174,11 @@ The adapter publishes a mission execution result when Nav2 reports that the
 goal succeeded. The mission manager still keeps RMF task-summary and fleet-state
 fallbacks for integration robustness.
 
+Package load/unload completion does not go through Free Fleet. The mission
+manager publishes `HANDLE_ITEM` commands on `mission_execution_commands`, and
+each robot's `handling_simulator_node` reports simulated completion on
+`mission_execution_results`.
+
 Expected logs:
 
 ```text

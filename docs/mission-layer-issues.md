@@ -197,7 +197,7 @@ events:
 
 ```text
 movement command completed
-handling timer completed
+robot handling result received
 RMF task summary received
 direct execution result received
 ```
@@ -222,14 +222,16 @@ mission progress should remain explainable through events.
 
 ## 7. Package Handling Is Simulated
 
-Load/unload is still represented by a ROS timer:
+Load/unload is currently confirmed by robot-side handling simulator nodes:
 
 ```text
-HANDLE_ITEM -> 5 second timer -> command succeeded
+HANDLE_ITEM command -> handling_simulator_node -> delayed SUCCEEDED result
 ```
 
 This is acceptable for current mission-layer testing, but not a final physical
-handoff confirmation model.
+handoff confirmation model. The mission manager now waits for an execution
+result instead of completing handling with its own local timer, but the result
+is still simulated rather than physically verified.
 
 Future confirmation sources:
 

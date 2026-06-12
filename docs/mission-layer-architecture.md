@@ -38,7 +38,7 @@ MissionManagerNode
   -> TransportTaskScheduler
   -> TransportTaskBtRunner
   -> ExecutionManager
-  -> RmfExecutionAdapter / handling timer
+  -> RmfExecutionAdapter / robot handling simulator
   -> execution completion
   -> MissionManager
 ```
@@ -74,7 +74,7 @@ RmfExecutionAdapter:
 Source map:
 
 ```text
-mission_manager_node.py       ROS node, topics, timers, RMF/free_fleet callbacks
+mission_manager_node.py       ROS node, topics, RMF/free_fleet callbacks
 mission_manager.py            mission lifecycle and task coordination
 mission_tasks.py              mission/task status and transport task model
 scheduler.py                  deterministic ready-task selection and pre-staging
@@ -86,6 +86,8 @@ resources.py                  resource state model
 execution.py                  execution command lifecycle
 rmf_execution_adapter.py      RMF task API adapter for movement commands
 mission_serializer.py         mission_state JSON serialization
+robot_bringup/handling_simulator_node.py
+                             robot-side simulated load/unload confirmation
 ```
 
 ---
@@ -384,8 +386,8 @@ MOVE_ROBOT:
   publish robot_task_request to task_api_requests
 
 HANDLE_ITEM:
-  start a 5 second ROS timer
-  complete the command when the timer fires
+  publish mission_execution_commands context
+  wait for robot-side handling result
 ```
 
 `RmfExecutionAdapter` converts movement commands into RMF
@@ -405,6 +407,37 @@ request_id -> command_id
 rmf_task_id -> command_id
 completed_rmf_task_ids
 ```
+
+---
+
+## Handling Completion Path
+
+`HANDLE_ITEM` commands are not RMF tasks. The mission manager publishes them on
+`mission_execution_commands` and waits for a robot-side result:
+
+```text
+MissionManagerNode publishes HANDLE_ITEM command context
+handling_simulator_node filters by robot_id
+handling_simulator_node waits handling_duration_sec
+handling_simulator_node publishes mission_execution_results
+MissionManagerNode calls mission_manager.complete_command(command_id)
+```
+
+The command payload includes:
+
+```text
+mission_id
+command_id
+task_id
+robot_id
+command_type = handle_item
+item_id
+handling_type = load | unload
+```
+
+The current simulator always reports `SUCCEEDED` after the configured delay. It
+is a robot-side stand-in for a future actuator, sensor, operator confirmation,
+or simulator-truth confirmation source.
 
 ---
 
@@ -517,8 +550,8 @@ rule unless the mission layer, RMF graph design, mutexes, or task definitions
 encode it.
 
 The current mission world is still optimistic for package handling: it updates
-item state when simulated handling timers complete. It does not yet verify
-physical package pickup/dropoff.
+item state when robot-side handling simulator results arrive. It does not yet
+verify physical package pickup/dropoff.
 
 ---
 
@@ -540,7 +573,7 @@ RmfExecutionAdapter:
   cancellation, failure handling, richer RMF task types
 
 MissionManagerNode:
-  replace handling timers with real robot/hardware confirmations
+  replace robot-side handling simulation with real hardware confirmations
   strengthen execution-result failure/cancellation handling
 
 MissionManager:

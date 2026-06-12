@@ -5,6 +5,10 @@ from rclpy.node import Node
 from std_msgs.msg import String
 
 
+MISSION_EXECUTION_COMMANDS_TOPIC = "mission_execution_commands"
+MISSION_EXECUTION_RESULTS_TOPIC = "mission_execution_results"
+
+
 class HandlingSimulatorNode(Node):
     def __init__(self):
         super().__init__("handling_simulator")
@@ -12,8 +16,6 @@ class HandlingSimulatorNode(Node):
         self.declare_parameter("robot_id", "")
         self.declare_parameter("mission_id", "")
         self.declare_parameter("handling_duration_sec", 5.0)
-        self.declare_parameter("mission_execution_commands_topic", "mission_execution_commands")
-        self.declare_parameter("mission_execution_results_topic", "mission_execution_results")
 
         self.robot_id = self.get_parameter("robot_id").value
         self.mission_id = self.get_parameter("mission_id").value
@@ -21,11 +23,17 @@ class HandlingSimulatorNode(Node):
             self.get_parameter("handling_duration_sec").value
         )
 
-        commands_topic = self.get_parameter("mission_execution_commands_topic").value
-        results_topic = self.get_parameter("mission_execution_results_topic").value
-
-        self.result_pub = self.create_publisher(String, results_topic, 10)
-        self.create_subscription(String, commands_topic, self._handle_command, 10)
+        self.result_pub = self.create_publisher(
+            String,
+            MISSION_EXECUTION_RESULTS_TOPIC,
+            10,
+        )
+        self.create_subscription(
+            String,
+            MISSION_EXECUTION_COMMANDS_TOPIC,
+            self._handle_command,
+            10,
+        )
 
         self.active_timers = {}
         self.completed_command_ids = set()

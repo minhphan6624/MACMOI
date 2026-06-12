@@ -353,4 +353,5 @@ Use these for details beyond the quick setup:
 - The single-robot config enables `tb3_1`.
 - The two-robot config enables `tb3_1` and `tb3_2`.
 - `robot_bringup` selects robot-specific Nav2 parameters from `robot_id`.
-- The mission layer currently simulates package load/unload with timers.
+- Robot-side `handling_simulator_node` instances simulate package load/unload
+  and report completion on `mission_execution_results`.

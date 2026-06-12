@@ -622,7 +622,7 @@ implicit. Different ROS callbacks call different mission-manager methods:
 mission command start
   -> MissionManager.start()
 
-RMF task summary / Nav2 result / handling timer completion
+RMF task summary / Nav2 result / robot handling result
   -> MissionManager.complete_command(command_id)
 
 MissionManager.start() and MissionManager.complete_command(...)
@@ -644,7 +644,7 @@ The ROS node should translate external callbacks into mission events, then let
 the mission manager update state and emit any follow-up commands:
 
 ```text
-ROS callback / timer / dashboard command
+ROS callback / robot result / timer / dashboard command
   -> MissionEvent
   -> MissionManager.handle_event(...)
   -> ExecutionCommand list
@@ -698,7 +698,7 @@ OperatorCommandEvent(command="pause")
 If two cases produce different mission behavior, represent them as different
 event classes. If they only differ by metadata, use one event class with fields.
 For example, `ExecutionCommandCompleted` can carry `source =
-"task_summary" | "nav2_result" | "handling_timer"` rather than
+"task_summary" | "nav2_result" | "robot_handling_simulator"` rather than
 creating separate completion event classes for each source.
 
 `handle_event(...)` should route events to focused private handlers instead of
@@ -815,9 +815,12 @@ its active command, record the failure reason, and mark the mission `FAILED`
 when recovery is not available. Add retries and fallback branches only after
 that failure path is explicit and visible in `mission_state`.
 
-### Step 7: Replace simulated handling timers
+### Step 7: Replace simulated handling confirmation
 
-Replace fake `HANDLE_ITEM` completion with real, simulated, or operator-confirmed pickup/dropoff confirmation.
+The mission manager now waits for robot-side `HANDLE_ITEM` results instead of
+self-completing load/unload with local timers. The remaining work is replacing
+the robot-side simulator result with real hardware, sensor, simulator-truth, or
+operator-confirmed pickup/dropoff confirmation.
 
 ### Step 8: Introduce capabilities and dynamic assignment
 

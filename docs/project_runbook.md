@@ -142,6 +142,25 @@ tb3_2 initial_pose -> [-2.7358, 2.2426, 0.0]
 Physically place the robots at those home-zone poses before launching Nav2, or
 update the initial poses to match the robots' actual physical poses.
 
+`robot.launch.py` starts one `handling_simulator_node` by default. The simulator
+listens for `HANDLE_ITEM` commands for its `robot_id`, waits
+`handling_duration_sec` seconds, and publishes a success result. Disable it only
+when replacing simulated handling with another confirmation source:
+
+```bash
+ros2 launch robot_bringup robot.launch.py \
+  robot_id:=tb3_1 \
+  enable_handling_simulator:=false
+```
+
+To change the simulated load/unload duration:
+
+```bash
+ros2 launch robot_bringup robot.launch.py \
+  robot_id:=tb3_1 \
+  handling_duration_sec:=3.0
+```
+
 ## 2.2. Start Zenoh
 
 On the central PC:
@@ -201,14 +220,18 @@ MissionManagerNode
   -> TransportTaskScheduler
   -> TransportTaskRunner
   -> ExecutionManager
-  -> RmfExecutionAdapter / handling timer
+  -> RmfExecutionAdapter / robot handling simulator
 ```
 
-The node publishes RMF movement requests for `MOVE_ROBOT` commands and uses a
-short simulated timer for `HANDLE_ITEM` load/unload commands. Movement requests
-are sent to RMF as composed `go_to_place` robot tasks. The mission node also
-publishes `mission_execution_commands` so the Free Fleet Nav2 adapter can report
-direct completion on `mission_execution_results`.
+The node publishes RMF movement requests for `MOVE_ROBOT` commands and publishes
+`HANDLE_ITEM` load/unload commands on `mission_execution_commands`. Robot-side
+`handling_simulator_node` instances simulate handling and report completion on
+`mission_execution_results`. Movement requests are sent to RMF as composed
+`go_to_place` robot tasks.
+
+Handling command payloads include `mission_id`, `command_id`, `task_id`,
+`robot_id`, `item_id`, and `handling_type`. The mission manager updates item
+state only after it receives the matching execution result.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -277,7 +300,7 @@ ros2 topic echo /mission_state std_msgs/msg/String \
 
 The `mission_state` JSON includes mission status, package locations, robot
 states, resources, transport tasks, execution commands, active RMF task IDs, and
-active handling timers.
+active handling commands.
 
 Useful execution-completion logs:
 
@@ -406,6 +429,7 @@ or diagnosing a problem.
 ros2 topic list --no-daemon
 ros2 topic echo /fleet_states rmf_fleet_msgs/msg/FleetState
 ros2 topic echo /mission_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local
+ros2 topic echo /mission_execution_commands std_msgs/msg/String
 ros2 topic echo /mission_execution_results std_msgs/msg/String
 ```
 
