@@ -364,7 +364,6 @@ It subscribes to:
 mission_commands
 task_api_responses
 task_summaries
-fleet_states
 mission_execution_results
 ```
 
@@ -423,20 +422,17 @@ free_fleet Nav2 adapter publishes mission_execution_results
 MissionManagerNode calls mission_manager.complete_command(command_id)
 ```
 
-Fallback paths:
+Secondary path:
 
 ```text
 task_summaries:
   RMF task summary reports STATE_COMPLETED
   mission node maps rmf_task_id -> command_id
-
-fleet_states:
-  robot is no longer moving and is at the command target
-  or robot.task_id no longer matches the tracked RMF task
 ```
 
-The fallback paths remain because RMF task summaries and fleet state timing can
-vary during physical integration.
+The mission layer no longer completes commands from inferred `/fleet_states`
+pose or mode. Movement completion should come from explicit execution results
+or RMF task summaries.
 
 Expected direct completion logs:
 

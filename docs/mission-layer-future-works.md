@@ -622,7 +622,7 @@ implicit. Different ROS callbacks call different mission-manager methods:
 mission command start
   -> MissionManager.start()
 
-RMF task summary / fleet state / Nav2 result / handling timer completion
+RMF task summary / Nav2 result / handling timer completion
   -> MissionManager.complete_command(command_id)
 
 MissionManager.start() and MissionManager.complete_command(...)
@@ -698,7 +698,7 @@ OperatorCommandEvent(command="pause")
 If two cases produce different mission behavior, represent them as different
 event classes. If they only differ by metadata, use one event class with fields.
 For example, `ExecutionCommandCompleted` can carry `source =
-"task_summary" | "fleet_state" | "nav2_result" | "handling_timer"` rather than
+"task_summary" | "nav2_result" | "handling_timer"` rather than
 creating separate completion event classes for each source.
 
 `handle_event(...)` should route events to focused private handlers instead of

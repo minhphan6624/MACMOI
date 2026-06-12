@@ -161,15 +161,11 @@ free_fleet Nav2 adapter publishes mission_execution_results
 mission_manager completes the command
 ```
 
-Fallback paths:
+Secondary completion path:
 
 ```text
 task_summaries:
   RMF reports STATE_COMPLETED for the tracked RMF task
-
-fleet_states:
-  robot is no longer moving and appears to be at the command target
-  or robot.task_id changes away from the tracked RMF task
 ```
 
 This was added because physical tests showed cases where Nav2 reached a goal
@@ -180,7 +176,6 @@ Relevant expected logs:
 ```text
 Published mission execution result: ...
 Mission command completed from nav2_result: cmd_X
-Mission command completed from fleet_state_target_pose: cmd_X
 Mission command completed from task_summary: cmd_X
 ```
 
@@ -204,7 +199,6 @@ events:
 movement command completed
 handling timer completed
 RMF task summary received
-fleet state fallback completed a command
 direct execution result received
 ```
 

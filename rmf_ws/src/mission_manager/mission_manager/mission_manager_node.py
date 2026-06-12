@@ -1,5 +1,4 @@
 import json
-import math
 
 import rclpy
 from rclpy.node import Node
@@ -7,16 +6,13 @@ from rclpy.qos import DurabilityPolicy
 from rclpy.qos import HistoryPolicy
 from rclpy.qos import QoSProfile
 from rclpy.qos import ReliabilityPolicy
-from rmf_fleet_msgs.msg import FleetState
 from rmf_task_msgs.msg import ApiRequest, ApiResponse, TaskSummary
 from std_msgs.msg import String
 
 from .execution import ExecutionCommand, ExecutionCommandStatus, ExecutionCommandType
 from .mission_definition import (
     DOWNSTREAM_ROBOT,
-    FLEET_NAME,
     UPSTREAM_ROBOT,
-    WAYPOINTS,
 )
 from .mission_serializer import action_to_dict, event_to_dict, serialize_runtime_mission_state
 from .mission_manager import MissionManager
@@ -26,7 +22,6 @@ from .rmf_execution_adapter import RmfExecutionAdapter, RmfExecutionAdapterConfi
 TASK_API_REQUESTS_TOPIC = "task_api_requests"
 TASK_API_RESPONSES_TOPIC = "task_api_responses"
 TASK_SUMMARIES_TOPIC = "task_summaries"
-FLEET_STATES_TOPIC = "fleet_states"
 MISSION_STATE_TOPIC = "mission_state"
 MISSION_COMMANDS_TOPIC = "mission_commands"
 MISSION_EXECUTION_COMMANDS_TOPIC = "mission_execution_commands"
@@ -44,8 +39,6 @@ class MissionManagerNode(Node):
         self.declare_parameter("mission_id", "m1")
         self.declare_parameter("total_packages", 1)
         self.declare_parameter("auto_start", False)
-        self.declare_parameter("enable_fleet_state_completion_fallback", True)
-        self.declare_parameter("target_position_tolerance", 0.35)
 
         mission_id = self.get_parameter("mission_id").value
         total_packages = self.get_parameter("total_packages").value
@@ -78,12 +71,6 @@ class MissionManagerNode(Node):
             TaskSummary,
             TASK_SUMMARIES_TOPIC,
             self._handle_task_summaries,
-            10,
-        )
-        self.create_subscription(
-            FleetState,
-            FLEET_STATES_TOPIC,
-            self._handle_fleet_state,
             10,
         )
         self.mission_state_pub = self.create_publisher(
@@ -120,12 +107,6 @@ class MissionManagerNode(Node):
         self.active_handling_timers = []
         self.last_event = None
         self.last_action = None
-        self.enable_fleet_state_completion_fallback = bool(
-            self.get_parameter("enable_fleet_state_completion_fallback").value
-        )
-        self.target_position_tolerance = float(
-            self.get_parameter("target_position_tolerance").value
-        )
 
         if self.get_parameter("auto_start").value:
             self._record_event({"command": "auto_start", "mission_id": mission_id})
@@ -167,77 +148,12 @@ class MissionManagerNode(Node):
             )
         self._dispatch_commands(commands)
 
-    def _handle_fleet_state(self, msg: FleetState) -> None:
-        """Use fleet state as a fallback completion source for move commands."""
-
-        if msg.name != FLEET_NAME:
-            return
-        if not self.enable_fleet_state_completion_fallback:
-            self._publish_mission_state()
-            return
-
-        commands = []
-        fleet_robots = {robot.name: robot for robot in msg.robots}
-        for rmf_task_id, command_id in list(
-            self.rmf_adapter.command_id_by_rmf_task_id.items()
-        ):
-            command = self.mission_manager.execution_manager.commands.get(command_id)
-            if command is None or self._is_terminal_command(command):
-                continue
-
-            fleet_robot = fleet_robots.get(command.robot_id)
-            if fleet_robot is None:
-                continue
-
-            mode = fleet_robot.mode
-            if mode.mode == mode.MODE_MOVING:
-                continue
-
-            if not self._robot_reached_command_target(fleet_robot, command):
-                continue
-
-            completed_command_id = self.rmf_adapter.command_from_completed_task(
-                rmf_task_id
-            )
-            if completed_command_id is None:
-                continue
-            commands.extend(
-                self._complete_execution_command(
-                    completed_command_id,
-                    "fleet_state_target_pose",
-                    rmf_task_id,
-                )
-            )
-
-        self._dispatch_commands(commands)
-
     def _is_terminal_command(self, command: ExecutionCommand) -> bool:
         return command.status in (
             ExecutionCommandStatus.SUCCEEDED,
             ExecutionCommandStatus.FAILED,
             ExecutionCommandStatus.CANCELLED,
         )
-
-    def _robot_reached_command_target(self, fleet_robot, command: ExecutionCommand) -> bool:
-        """Return whether a fleet robot appears to have reached a command target."""
-
-        if command.command_type != ExecutionCommandType.MOVE_ROBOT:
-            return False
-        if command.target is None:
-            return False
-
-        waypoint = WAYPOINTS.get(command.target)
-        if waypoint is None:
-            return False
-
-        location = fleet_robot.location
-        if int(location.index) == waypoint["index"]:
-            return True
-
-        target_x, target_y = waypoint["position"]
-        distance = math.hypot(location.x - target_x, location.y - target_y)
-        
-        return distance <= self.target_position_tolerance
 
     def _complete_execution_command(
         self,

@@ -67,7 +67,7 @@ mission_manager -> mission_execution_commands -> free_fleet Nav2 adapter
 free_fleet Nav2 adapter -> mission_execution_results -> mission_manager
 ```
 
-RMF task summaries and fleet state are still used as fallback completion paths.
+RMF task summaries are still used as a secondary completion path.
 
 ## Prerequisites
 
@@ -275,13 +275,7 @@ Expected movement completion logs:
 ```text
 Published mission execution result: ...
 Mission command completed from nav2_result: cmd_X
-```
-
-Fallback completion logs may also appear:
-
-```text
 Mission command completed from task_summary: cmd_X
-Mission command completed from fleet_state_target_pose: cmd_X
 ```
 
 ## Optional Web Interface
