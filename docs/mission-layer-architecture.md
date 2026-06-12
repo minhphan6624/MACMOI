@@ -437,7 +437,9 @@ handling_type = load | unload
 
 The current simulator always reports `SUCCEEDED` after the configured delay. It
 is a robot-side stand-in for a future actuator, sensor, operator confirmation,
-or simulator-truth confirmation source.
+or simulator-truth confirmation source. During the delay it may call the
+TurtleBot3 `sound` service for observable start/end cues, but sound feedback is
+best-effort and does not decide command success.
 
 ---
 

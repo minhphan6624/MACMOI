@@ -144,8 +144,12 @@ update the initial poses to match the robots' actual physical poses.
 
 `robot.launch.py` starts one `handling_simulator_node` by default. The simulator
 listens for `HANDLE_ITEM` commands for its `robot_id`, waits
-`handling_duration_sec` seconds, and publishes a success result. Disable it only
-when replacing simulated handling with another confirmation source:
+`handling_duration_sec` seconds, and publishes a success result. It also calls
+the TurtleBot3 `sound` service as a best-effort start/end cue; simulated
+handling still succeeds if the sound service is unavailable.
+
+Disable the simulator only when replacing simulated handling with another
+confirmation source:
 
 ```bash
 ros2 launch robot_bringup robot.launch.py \
@@ -431,6 +435,7 @@ ros2 topic echo /fleet_states rmf_fleet_msgs/msg/FleetState
 ros2 topic echo /mission_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local
 ros2 topic echo /mission_execution_commands std_msgs/msg/String
 ros2 topic echo /mission_execution_results std_msgs/msg/String
+ros2 service list | grep sound
 ```
 
 ## 5.2. Direct Zenoh/Nav2 Goal
