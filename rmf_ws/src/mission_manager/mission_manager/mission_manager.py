@@ -188,7 +188,7 @@ class MissionManager:
                 return commands
             
             return [*commands, *self.task_runner.start(task)]
-        else: 
-            self.tick()
+        
+        return self.tick()
     
         
