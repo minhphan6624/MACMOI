@@ -5,8 +5,10 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.actions import GroupAction
 from launch.actions import IncludeLaunchDescription
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import Node
 
 
 def generate_launch_description():
@@ -22,6 +24,8 @@ def generate_launch_description():
     map_yaml_file = LaunchConfiguration('map')
     params_file = LaunchConfiguration('params_file')
     use_sim_time = LaunchConfiguration('use_sim_time')
+    enable_handling_simulator = LaunchConfiguration('enable_handling_simulator')
+    handling_duration_sec = LaunchConfiguration('handling_duration_sec')
 
     autostart = LaunchConfiguration('autostart')
     slam = LaunchConfiguration('slam')
@@ -60,6 +64,16 @@ def generate_launch_description():
             'use_sim_time',
             default_value='False',
             description='Use simulation clock if True',
+        ),
+        DeclareLaunchArgument(
+            'enable_handling_simulator',
+            default_value='True',
+            description='Start the robot-side load/unload simulator',
+        ),
+        DeclareLaunchArgument(
+            'handling_duration_sec',
+            default_value='5.0',
+            description='Seconds spent simulating each load/unload command',
         ),
         DeclareLaunchArgument(
             'autostart',
@@ -122,6 +136,20 @@ def generate_launch_description():
                         'log_level': log_level,
                     }.items(),
                 ),
+            ],
+        ),
+        Node(
+            condition=IfCondition(enable_handling_simulator),
+            package='robot_bringup',
+            executable='handling_simulator_node',
+            name=['handling_simulator_', robot_id],
+            output='screen',
+            parameters=[
+                {
+                    'robot_id': robot_id,
+                    'handling_duration_sec': handling_duration_sec,
+                    'use_sim_time': use_sim_time,
+                }
             ],
         ),
     ])

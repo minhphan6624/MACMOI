@@ -29,6 +29,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'handling_simulator_node = robot_bringup.handling_simulator_node:main',
         ],
     },
 )
