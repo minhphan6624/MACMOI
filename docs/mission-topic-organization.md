@@ -85,6 +85,58 @@ directly. It should mainly consume mission-level topics.
 
 ## Recommended Topic Shape
 
+Mission-owned topics should eventually use a common namespace so they are easy
+to distinguish from RMF, Nav2, and robot topics.
+
+Recommended mission namespace:
+
+```text
+/mission/state
+/mission/debug_state
+/mission/events
+/mission/operator_commands
+/mission/execution_commands
+/mission/execution_results
+```
+
+This is clearer than the current flat names:
+
+```text
+/mission_state
+/mission_commands
+/mission_execution_commands
+/mission_execution_results
+```
+
+There are two ways to do this in ROS 2:
+
+- hardcode absolute topic names such as `/mission/state`
+- run the node under namespace `/mission` and use relative topic names such as
+  `state`, `operator_commands`, and `execution_commands`
+
+Using a node namespace is more idiomatic ROS, but hardcoded absolute names are
+easier to reason about in a small fixed deployment.
+
+Do not move RMF-owned topics under `/mission`. Keep these as RMF integration
+topics:
+
+```text
+task_api_requests
+task_api_responses
+task_summaries
+```
+
+Renaming mission topics affects every producer and consumer:
+
+- mission manager constants
+- Free Fleet/Nav2 execution bridge
+- web/API bridge subscriptions and publishers
+- README and runbook commands
+- rosbag/debug scripts
+
+The best time to migrate is before the web UI depends heavily on the current
+flat topic names.
+
 `mission_state`
 
 Keep this as the compact, stable, web/UI-facing mission snapshot.
@@ -154,6 +206,9 @@ Use this for:
 `mission_commands`
 
 Keep this as the mission command input topic.
+
+When namespaced, prefer `/mission/operator_commands`. This makes it clear that
+the topic carries operator/UI/API intent, not execution bridge work.
 
 Example commands:
 
