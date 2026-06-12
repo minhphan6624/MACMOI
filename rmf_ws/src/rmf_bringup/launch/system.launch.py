@@ -15,7 +15,7 @@ def generate_launch_description():
     config_file = LaunchConfiguration('config_file')
     viz_config_file = LaunchConfiguration('viz_config_file')
 
-    system_pkg = FindPackageShare('system_rmf_bringup')
+    system_pkg = FindPackageShare('rmf_bringup')
     fleet_pkg = FindPackageShare('free_fleet_bringup')
 
     building_file = PathJoinSubstitution([system_pkg, 'maps', 'aiml-lab.building.yaml'])
