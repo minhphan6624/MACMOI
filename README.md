@@ -31,11 +31,11 @@ Main project interfaces:
 
 - Robot bringup: `robot_ws/src/robot_bringup`
 - Mission manager: `rmf_ws/src/mission_manager`
-- RMF system bringup: `rmf_ws/src/system_rmf_bringup`
+- RMF system bringup: `rmf_ws/src/rmf_bringup`
 - Free Fleet bringup: `rmf_ws/src/free_fleet_bringup`
 - Two-robot fleet config: `rmf_ws/src/free_fleet_bringup/config/fleet/aiml_lab_multi_tb3_fleet.yaml`
-- RMF building map: `rmf_ws/src/system_rmf_bringup/maps/aiml-lab.building.yaml`
-- RMF nav graph: `rmf_ws/src/system_rmf_bringup/nav_graphs/1.yaml`
+- RMF building map: `rmf_ws/src/rmf_bringup/maps/aiml-lab.building.yaml`
+- RMF nav graph: `rmf_ws/src/rmf_bringup/nav_graphs/1.yaml`
 
 ## Current Architecture
 
@@ -146,7 +146,7 @@ cd rmf_ws
 source .venv/bin/activate
 source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix system_rmf_bringup)/share/system_rmf_bringup
+export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
 export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 ```
 
@@ -218,7 +218,7 @@ source .venv/bin/activate
 source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 launch system_rmf_bringup system.launch.py \
+ros2 launch rmf_bringup system.launch.py \
   use_sim_time:=false \
   headless:=false
 ```
@@ -327,14 +327,14 @@ source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
 ros2 run rmf_building_map_tools building_map_generator nav \
-  src/system_rmf_bringup/maps/aiml-lab.building.yaml \
-  src/system_rmf_bringup/nav_graphs
+  src/rmf_bringup/maps/aiml-lab.building.yaml \
+  src/rmf_bringup/nav_graphs
 ```
 
 Then rebuild the affected bringup package:
 
 ```bash
-colcon build --symlink-install --packages-select system_rmf_bringup
+colcon build --symlink-install --packages-select rmf_bringup
 source install/setup.bash
 ```
 

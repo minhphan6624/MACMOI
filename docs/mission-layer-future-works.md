@@ -365,7 +365,134 @@ larger recovery behaviors
 
 ---
 
-## 9. Add structured failure and recovery handling
+## 9. Add an execution backend switch for reduced RMF usage
+
+The current system uses RMF as the movement execution bridge between the
+mission layer and Nav2. When the mission layer emits a `MOVE_ROBOT` command,
+the ROS node publishes mission execution context and also submits an RMF task
+API request. RMF task dispatching accepts the request, the Free Fleet adapter
+receives a `go_to_place` command, the adapter sends a Nav2 `NavigateToPose`
+goal, and completion is reported back through RMF task summaries and the
+mission execution result channel.
+
+This is useful because it keeps the system aligned with RMF task and fleet
+infrastructure. However, for the current TurtleBot3-only handoff workflow, RMF
+is not the source of truth for collaboration semantics. The mission layer
+already decides:
+
+```text
+which robot owns the transfer resource
+whether a package is available at transfer
+whether transfer has package capacity
+which robot should wait at the directional exit/wait point
+why a task is blocked
+what event will unblock it
+```
+
+Those are mission-resource rules, not generic lane-traffic rules. RMF traffic
+scheduling can protect physical lane usage, but it does not naturally express
+handoff-specific states such as `PACKAGE_NOT_AVAILABLE`,
+`TRANSFER_PACKAGE_FULL`, or `WAITING_FOR_TRANSFER_LEASE`. For the intended use
+case, the explicit mission/resource logic should remain authoritative.
+
+The recommended future change is to add an execution backend switch:
+
+```text
+execution_backend = rmf | direct_nav2
+```
+
+In `rmf` mode, the system keeps the current behavior:
+
+```text
+MissionManager
+  -> MOVE_ROBOT
+  -> mission_execution_commands
+  -> RMF task_api_request
+  -> rmf_task_dispatcher
+  -> Free Fleet adapter
+  -> Nav2 NavigateToPose
+  -> task_summaries / mission_execution_results
+  -> MissionManager.complete_command(...)
+```
+
+In `direct_nav2` mode, the movement path should bypass RMF task dispatching:
+
+```text
+MissionManager
+  -> MOVE_ROBOT
+  -> mission_execution_commands
+  -> direct Nav2 command bridge
+  -> Nav2 NavigateToPose
+  -> mission_execution_results
+  -> MissionManager.complete_command(...)
+```
+
+The mission workflow should not change significantly between the two modes.
+The same mission tasks, resource leases, blocked states, and package state
+should be used. Only the command execution boundary changes.
+
+For this project, the main differences are:
+
+```text
+RMF backend:
+  uses RMF task dispatching, RMF task IDs, task summaries, Free Fleet, and the
+  RMF nav graph/lane model
+
+direct_nav2 backend:
+  uses mission command IDs, waypoint-to-pose lookup, direct Nav2 goals, and
+  mission_execution_results as the completion source
+```
+
+The direct Nav2 backend would require a small waypoint-pose configuration in
+the Nav2 `map` frame. Nav2 can use the normal TurtleBot3 occupancy map directly;
+it does not need the RMF annotated building map for navigation. The RMF
+building map and nav graph can still be kept for fallback RMF execution,
+comparison experiments, or dashboard map display, but they should not be the
+navigation source of truth in direct Nav2 mode.
+
+Implementation changes should be scoped:
+
+- add an `execution_backend` parameter to the mission manager node
+- keep the current RMF adapter path for `rmf` mode
+- add a direct Nav2 execution bridge for `direct_nav2` mode
+- add a waypoint-name to Nav2-pose YAML file
+- complete movement from `mission_execution_results` in direct mode
+- avoid relying on RMF `task_summaries` as the mission source of truth
+- keep mission-state publication stable for the dashboard
+
+The web UI should be treated as a mission operator interface rather than only a
+stock RMF dashboard. Reducing RMF task dispatching would make RMF task panels
+less meaningful unless equivalent custom task state is provided. Map display
+can still be supported through the RMF building map server or a custom map
+source. Robot fleet information can still come from Free Fleet/RMF while that
+adapter is retained, but if RMF traffic scheduling and Free Fleet are removed
+entirely, the project will need a custom robot-state API or websocket stream
+for the dashboard.
+
+A practical migration path is:
+
+```text
+short term:
+  keep RMF mode as the known-working fallback
+  add direct_nav2 mode for the TurtleBot3 mission workflow
+
+medium term:
+  make the custom mission dashboard depend primarily on mission_state,
+  mission commands, robot state, and mission execution results
+
+long term:
+  decide whether RMF remains as map/fleet visualization infrastructure,
+  comparison baseline, or is removed from the runtime entirely
+```
+
+This creates a defensible comparison: full RMF-mediated execution versus a
+mission-specific Nav2 execution backend. It also avoids prematurely deleting
+RMF components before the direct execution path has been validated on the real
+robots.
+
+---
+
+## 10. Add structured failure and recovery handling
 
 The mission layer should distinguish different failure types instead of treating all failures as generic task failure.
 
@@ -471,7 +598,7 @@ the mission state and useful to the dashboard/operator workflow.
 
 ---
 
-## 10. Strengthen the scheduler
+## 11. Strengthen the scheduler
 
 The current scheduler is deterministic and simple. It can be extended into a dependency-aware scheduler.
 
@@ -513,7 +640,7 @@ waiting at home may be safer.
 
 ---
 
-## 11. Generalize from fixed robots to roles and capabilities
+## 12. Generalize from fixed robots to roles and capabilities
 
 The current default mission assigns fixed roles:
 
@@ -558,7 +685,7 @@ This supports:
 
 ---
 
-## 12. Align mission resources with RMF movement constraints
+## 13. Align mission resources with RMF movement constraints
 
 The mission layer should remain the authority for semantic rules such as package handoff and transfer-zone ownership. RMF should remain responsible for movement, traffic planning, and navigation execution.
 
@@ -580,7 +707,7 @@ bad traffic behavior even when the mission-layer resource rules are correct.
 
 ---
 
-## 13. Improve the dashboard-facing mission state
+## 14. Improve the dashboard-facing mission state
 
 The operator interface should expose collaboration, not just robot motion.
 
@@ -613,7 +740,7 @@ This turns the dashboard from a fleet monitor into a mission coordination interf
 
 ---
 
-## 14. Introduce an explicit mission event interface
+## 15. Introduce an explicit mission event interface
 
 The current mission manager is already event-driven, but the event handling is
 implicit. Different ROS callbacks call different mission-manager methods:
@@ -738,7 +865,7 @@ can mostly remain in their current roles.
 
 ---
 
-## 15. Suggested implementation order
+## 16. Suggested implementation order
 
 ### Step 1: Add a small mission-event facade
 
@@ -838,7 +965,7 @@ blackboard tooling, consider migrating to `py_trees`.
 
 ---
 
-## 16. Recommended target architecture
+## 17. Recommended target architecture
 
 ```text
 Central mission layer:
@@ -872,7 +999,7 @@ Dashboard:
 
 ---
 
-## 17. Main takeaway
+## 18. Main takeaway
 
 The best next step is not to fully decentralize the system. The best next step is to strengthen the centralized mission layer so that collaboration is:
 

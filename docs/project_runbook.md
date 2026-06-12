@@ -17,7 +17,7 @@ source /opt/ros/jazzy/setup.bash
 source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix system_rmf_bringup)/share/system_rmf_bringup
+export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
 export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 ```
 
@@ -72,13 +72,13 @@ pnpm install
 Active building file:
 
 ```text
-rmf_ws/src/system_rmf_bringup/maps/aiml-lab.building.yaml
+rmf_ws/src/rmf_bringup/maps/aiml-lab.building.yaml
 ```
 
 Active RMF nav graph:
 
 ```text
-rmf_ws/src/system_rmf_bringup/nav_graphs/1.yaml
+rmf_ws/src/rmf_bringup/nav_graphs/1.yaml
 ```
 
 Current waypoint meaning:
@@ -200,7 +200,7 @@ source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 
-ros2 launch system_rmf_bringup system.launch.py \
+ros2 launch rmf_bringup system.launch.py \
   use_sim_time:=false \
   headless:=false \
   config_file:=$FREE_FLEET_BRINGUP_SHARE/config/fleet/aiml_lab_multi_tb3_fleet.yaml
@@ -347,7 +347,7 @@ source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 
-ros2 launch system_rmf_bringup system.launch.py \
+ros2 launch rmf_bringup system.launch.py \
   use_sim_time:=false \
   headless:=false \
   server_uri:=http://localhost:8000/_internal \
@@ -383,9 +383,9 @@ source /opt/ros/jazzy/setup.bash
 source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix system_rmf_bringup)/share/system_rmf_bringup
+export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
 
-ros2 launch system_rmf_bringup rmf_core.launch.xml \
+ros2 launch rmf_bringup rmf_core.launch.xml \
   use_sim_time:=false \
   headless:=false \
   config_file:=$SYSTEM_RMF_SHARE/maps/aiml-lab.building.yaml \
@@ -407,7 +407,7 @@ source /opt/ros/jazzy/setup.bash
 source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix system_rmf_bringup)/share/system_rmf_bringup
+export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
 export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 
 ros2 launch free_fleet_bringup aiml_lab_ff_bringup.launch.xml \
@@ -537,7 +537,7 @@ source /opt/ros/jazzy/setup.bash
 source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix system_rmf_bringup)/share/system_rmf_bringup
+export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
 
 gdb --args /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/python3 \
   /home/minhqphan/projects/MACMOI/rmf_ws/install/free_fleet_adapter/lib/free_fleet_adapter/fleet_adapter.py \
@@ -563,11 +563,11 @@ source /opt/ros/jazzy/setup.bash
 source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 
-rm -f /home/minhqphan/projects/MACMOI/rmf_ws/src/system_rmf_bringup/nav_graphs/1.yaml
+rm -f /home/minhqphan/projects/MACMOI/rmf_ws/src/rmf_bringup/nav_graphs/1.yaml
 
 ros2 run rmf_building_map_tools building_map_generator nav \
-  /home/minhqphan/projects/MACMOI/rmf_ws/src/system_rmf_bringup/maps/aiml-lab.building.yaml \
-  /home/minhqphan/projects/MACMOI/rmf_ws/src/system_rmf_bringup/nav_graphs
+  /home/minhqphan/projects/MACMOI/rmf_ws/src/rmf_bringup/maps/aiml-lab.building.yaml \
+  /home/minhqphan/projects/MACMOI/rmf_ws/src/rmf_bringup/nav_graphs
 ```
 
 Then rebuild the bringup packages:
@@ -577,7 +577,7 @@ cd /home/minhqphan/projects/MACMOI/rmf_ws
 source /opt/ros/jazzy/setup.bash
 source .venv/bin/activate
 
-colcon build --packages-select system_rmf_bringup free_fleet_bringup --symlink-install
+colcon build --packages-select rmf_bringup free_fleet_bringup --symlink-install
 source install/setup.bash
 ```
 
