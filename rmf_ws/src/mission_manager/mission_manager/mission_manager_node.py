@@ -13,34 +13,28 @@ from std_msgs.msg import String
 
 from .execution import ExecutionCommand, ExecutionCommandStatus, ExecutionCommandType
 from .mission_definition import (
-    DESTINATION_WAYPOINT,
     DOWNSTREAM_ROBOT,
-    DOWNSTREAM_HOME_WAYPOINT,
     FLEET_NAME,
-    SOURCE_WAYPOINT,
-    TRANSFER_DOWNSTREAM_EXIT_WAYPOINT,
-    TRANSFER_UPSTREAM_EXIT_WAYPOINT,
-    TRANSFER_WAYPOINT,
     UPSTREAM_ROBOT,
-    UPSTREAM_HOME_WAYPOINT,
+    WAYPOINTS,
 )
 from .mission_serializer import action_to_dict, event_to_dict, serialize_runtime_mission_state
 from .mission_manager import MissionManager
 from .rmf_execution_adapter import RmfExecutionAdapter, RmfExecutionAdapterConfig
 
 
+TASK_API_REQUESTS_TOPIC = "task_api_requests"
+TASK_API_RESPONSES_TOPIC = "task_api_responses"
+TASK_SUMMARIES_TOPIC = "task_summaries"
+FLEET_STATES_TOPIC = "fleet_states"
+MISSION_STATE_TOPIC = "mission_state"
+MISSION_COMMANDS_TOPIC = "mission_commands"
+MISSION_EXECUTION_COMMANDS_TOPIC = "mission_execution_commands"
+MISSION_EXECUTION_RESULTS_TOPIC = "mission_execution_results"
+
+
 class MissionManagerNode(Node):
     """ROS node that connects mission logic to RMF, Free Fleet, and topics."""
-
-    WAYPOINTS = {
-        TRANSFER_WAYPOINT: {"index": 1, "position": (12.942662582931954, -5.815638350433473)},
-        DESTINATION_WAYPOINT: {"index": 2, "position": (9.897501485095004, -5.772506176387456)},
-        SOURCE_WAYPOINT: {"index": 3, "position": (15.633784531333973, -5.781093130945816)},
-        DOWNSTREAM_HOME_WAYPOINT: {"index": 4, "position": (10.706303773928157, -3.710551375482774)},
-        UPSTREAM_HOME_WAYPOINT: {"index": 5, "position": (15.554725329020794, -3.8208986765890605)},
-        TRANSFER_DOWNSTREAM_EXIT_WAYPOINT: {"index": 6, "position": (11.683390631979744, -4.965924651664219)},
-        TRANSFER_UPSTREAM_EXIT_WAYPOINT: {"index": 7, "position": (14.25340691092075, -5.024207371971251)},
-    }
 
     def __init__(self):
         """Initialize ROS I/O, mission runtime, RMF adapter, and debug state."""
@@ -50,12 +44,6 @@ class MissionManagerNode(Node):
         self.declare_parameter("mission_id", "m1")
         self.declare_parameter("total_packages", 1)
         self.declare_parameter("auto_start", False)
-        self.declare_parameter("task_summaries_topic", "task_summaries")
-        self.declare_parameter("fleet_states_topic", "fleet_states")
-        self.declare_parameter("mission_state_topic", "mission_state")
-        self.declare_parameter("mission_commands_topic", "mission_commands")
-        self.declare_parameter("mission_execution_commands_topic", "mission_execution_commands")
-        self.declare_parameter("mission_execution_results_topic", "mission_execution_results")
         self.declare_parameter("enable_fleet_state_completion_fallback", True)
         self.declare_parameter("target_position_tolerance", 0.35)
 
@@ -77,46 +65,46 @@ class MissionManagerNode(Node):
         )
         self.api_request_pub = self.create_publisher(
             ApiRequest,
-            "task_api_requests",
+            TASK_API_REQUESTS_TOPIC,
             qos,
         )
         self.create_subscription(
             ApiResponse,
-            "task_api_responses",
+            TASK_API_RESPONSES_TOPIC,
             self._handle_api_response,
             qos,
         )
         self.create_subscription(
             TaskSummary,
-            self.get_parameter("task_summaries_topic").value,
+            TASK_SUMMARIES_TOPIC,
             self._handle_task_summaries,
             10,
         )
         self.create_subscription(
             FleetState,
-            self.get_parameter("fleet_states_topic").value,
+            FLEET_STATES_TOPIC,
             self._handle_fleet_state,
             10,
         )
         self.mission_state_pub = self.create_publisher(
             String,
-            self.get_parameter("mission_state_topic").value,
+            MISSION_STATE_TOPIC,
             qos,
         )
         self.create_subscription(
             String,
-            self.get_parameter("mission_commands_topic").value,
+            MISSION_COMMANDS_TOPIC,
             self._handle_mission_command,
             10,
         )
         self.execution_command_pub = self.create_publisher(
             String,
-            self.get_parameter("mission_execution_commands_topic").value,
+            MISSION_EXECUTION_COMMANDS_TOPIC,
             10,
         )
         self.create_subscription(
             String,
-            self.get_parameter("mission_execution_results_topic").value,
+            MISSION_EXECUTION_RESULTS_TOPIC,
             self._handle_execution_result,
             10,
         )
@@ -238,7 +226,7 @@ class MissionManagerNode(Node):
         if command.target is None:
             return False
 
-        waypoint = self.WAYPOINTS.get(command.target)
+        waypoint = WAYPOINTS.get(command.target)
         if waypoint is None:
             return False
 
@@ -248,6 +236,7 @@ class MissionManagerNode(Node):
 
         target_x, target_y = waypoint["position"]
         distance = math.hypot(location.x - target_x, location.y - target_y)
+        
         return distance <= self.target_position_tolerance
 
     def _complete_execution_command(
