@@ -1,38 +1,13 @@
 from dataclasses import dataclass, field
 from enum import Enum
 
-
-class ResourceType(Enum):
-    TRANSFER_ZONE = "transfer_zone"
-    STAGING_ZONE = "staging_zone"
-    BUFFER = "buffer"
-
-
-class ResourceReservationStatus(Enum):
-    RESERVED = "RESERVED"
-    OCCUPIED = "OCCUPIED"
-    RELEASED = "RELEASED"
-
-
-class ResourceAccessStatus(Enum):
-    GRANTED = "GRANTED"
-    WAIT = "WAIT"
-    BLOCKED = "BLOCKED"
-
-
-@dataclass
-class ResourceReservation:
-    reservation_id: str
-    resource_id: str
-    owner_id: str
-    actor_id: str
-    purpose: str
-    item_id: str | None = None
-    status: ResourceReservationStatus = ResourceReservationStatus.RESERVED
-
+# Classes for resource-related states/attributes 
+# In this case, resources are constraint-zones
 
 @dataclass
 class ResourceLease:
+    """Temporary permission for one actor to use a managed resource."""
+
     resource_id: str
     task_id: str
     actor_id: str
@@ -41,17 +16,10 @@ class ResourceLease:
 
 
 @dataclass
-class ResourceAccessDecision:
-    status: ResourceAccessStatus
-    target: str | None = None
-    reason: str | None = None
-    blocked_by: str | None = None
-
-
-@dataclass
 class ResourceState:
+    """Mission-layer state for a constrained shared resource."""
+
     resource_id: str
-    resource_type: ResourceType
     robot_capacity: int = 1
     package_capacity: int = 0
     wait_waypoint: str | None = None
@@ -59,7 +27,6 @@ class ResourceState:
     robot_occupancy: list[str] = field(default_factory=list)
     package_occupancy: list[str] = field(default_factory=list)
     active_lease: ResourceLease | None = None
-    reservations: dict[str, ResourceReservation] = field(default_factory=dict)
 
     @property
     def robot_slots_available(self) -> int:
@@ -68,3 +35,20 @@ class ResourceState:
     @property
     def package_slots_available(self) -> int:
         return self.package_capacity - len(self.package_occupancy)
+
+# ----- Access-related classes -----
+class ResourceAccessStatus(Enum):
+    """Result of a request to use a managed mission resource."""
+
+    GRANTED = "GRANTED"
+    WAIT = "WAIT"
+    BLOCKED = "BLOCKED"
+
+@dataclass
+class ResourceAccessDecision:
+    """Resource access response with optional wait/block explanation."""
+
+    status: ResourceAccessStatus
+    target: str | None = None
+    reason: str | None = None
+    blocked_by: str | None = None

@@ -58,10 +58,10 @@ TransportTaskScheduler:
 TransportTaskBtRunner:
   executes one transport task using a small behavior-tree sequence
 
-RuntimeWorld:
+MissionWorld:
   mission-layer belief about robots, items, and resources
 
-WorldResourceManager:
+ResourceManager:
   resource access, transfer leases, occupancy, and package buffering
 
 ExecutionManager:
@@ -174,7 +174,7 @@ mutexes help the physical movement respect that decision.
 mission_id
 mission status
 transport task instances
-RuntimeWorld
+MissionWorld
 ```
 
 Main behavior:
@@ -298,7 +298,7 @@ upstream unload into transfer:
 
 ## Resource Access
 
-`WorldResourceManager.request_access(...)` is the resource-access gate.
+`ResourceManager.request_access(...)` is the resource-access gate.
 
 Current transfer rules:
 
@@ -348,11 +348,9 @@ active_lease
 robot_occupancy
 package_occupancy
 wait_waypoints
-reservations
 ```
 
-Reservations still exist in the model, but `active_lease` plus occupancy is the
-current coordination mechanism.
+`active_lease` plus occupancy is the current coordination mechanism.
 
 ---
 
@@ -366,7 +364,6 @@ It subscribes to:
 mission_commands
 task_api_responses
 task_summaries
-fleet_states
 mission_execution_results
 ```
 
@@ -425,20 +422,17 @@ free_fleet Nav2 adapter publishes mission_execution_results
 MissionManagerNode calls mission_manager.complete_command(command_id)
 ```
 
-Fallback paths:
+Secondary path:
 
 ```text
 task_summaries:
   RMF task summary reports STATE_COMPLETED
   mission node maps rmf_task_id -> command_id
-
-fleet_states:
-  robot is no longer moving and is at the command target
-  or robot.task_id no longer matches the tracked RMF task
 ```
 
-The fallback paths remain because RMF task summaries and fleet state timing can
-vary during physical integration.
+The mission layer no longer completes commands from inferred `/fleet_states`
+pose or mode. Movement completion should come from explicit execution results
+or RMF task summaries.
 
 Expected direct completion logs:
 
@@ -539,7 +533,7 @@ TransportTaskScheduler:
 TransportTaskBtRunner:
   richer task behavior, retry/recovery, alternative BT backend
 
-WorldResourceManager:
+ResourceManager:
   queues, stronger lease arbitration, timeouts
 
 RmfExecutionAdapter:

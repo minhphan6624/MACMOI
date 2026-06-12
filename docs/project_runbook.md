@@ -284,7 +284,6 @@ Useful execution-completion logs:
 ```text
 Published mission execution result: ...
 Mission command completed from nav2_result: cmd_X
-Mission command completed from fleet_state_target_pose: cmd_X
 Mission command completed from task_summary: cmd_X
 ```
 

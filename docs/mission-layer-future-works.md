@@ -60,10 +60,10 @@ TransportTaskScheduler:
 TransportTaskBtRunner:
   per-task execution behavior
 
-RuntimeWorld:
+MissionWorld:
   mission-layer robot/item/resource state
 
-WorldResourceManager:
+ResourceManager:
   transfer-zone access decisions
 
 RmfExecutionAdapter:
@@ -405,6 +405,70 @@ Example recovery state:
 
 This is especially important for HRI because failures are when the operator most needs a clear explanation and actionable choices.
 
+### Current gap: command failure does not yet drive task recovery
+
+The code already has failure-oriented states such as `MissionTaskStatus.FAILED`
+and `ExecutionCommandStatus.FAILED`, but the transport behavior tree currently
+only returns:
+
+```text
+SUCCESS
+RUNNING
+```
+
+There is no behavior-tree failure result and no fallback/recovery branch yet.
+When an execution result reports `FAILED` or `CANCELLED`, the node can mark the
+execution command failed, but the active task is not yet cleanly transitioned
+through the mission manager and BT runner. That means the mission can stall
+with a failed command while the task still looks active.
+
+The first improvement should be explicit failed-command handling, not a large
+fallback tree. Add a mission-manager entry point such as:
+
+```python
+MissionManager.handle_command_failed(command_id, error)
+```
+
+or represent it through the future event interface:
+
+```python
+MissionManager.handle_event(ExecutionCommandFailed(...))
+```
+
+That path should:
+
+```text
+mark the execution command failed
+find the task that owns the command
+clear task.active_command_id
+store the failure reason on the task
+set the task to FAILED or a recovery-needed state
+set the mission to FAILED if the failure is unrecoverable
+publish the updated mission_state
+```
+
+It may be worth adding `MissionStatus.FAILED` so runtime failure is distinct
+from `ABORTED`, which should mean operator-initiated cancellation.
+
+After failed-command handling is explicit, add focused recovery policies:
+
+```text
+move command failed
+  -> retry a small number of times, then fail the task
+
+RMF task rejected
+  -> fail the command immediately or retry with backoff
+
+resource unavailable
+  -> keep the task BLOCKED/WAITING instead of failing
+
+load/unload failed or timed out
+  -> mark the task recovery-needed and ask for operator confirmation
+```
+
+Only add a richer fallback BT once these states and transitions are visible in
+the mission state and useful to the dashboard/operator workflow.
+
 ---
 
 ## 10. Strengthen the scheduler
@@ -549,9 +613,150 @@ This turns the dashboard from a fleet monitor into a mission coordination interf
 
 ---
 
-## 14. Suggested implementation order
+## 14. Introduce an explicit mission event interface
 
-### Step 1: Add explicit return-home behavior
+The current mission manager is already event-driven, but the event handling is
+implicit. Different ROS callbacks call different mission-manager methods:
+
+```text
+mission command start
+  -> MissionManager.start()
+
+RMF task summary / Nav2 result / handling timer completion
+  -> MissionManager.complete_command(command_id)
+
+MissionManager.start() and MissionManager.complete_command(...)
+  -> tick()
+```
+
+This is enough for the current fixed handoff because most meaningful progress
+is caused by execution-command completion. It becomes harder to extend once the
+mission depends on operator decisions, retries, timeouts, manual package
+confirmation, robot availability changes, or external resource updates.
+
+The next version should introduce one common mission-event entry point:
+
+```python
+MissionManager.handle_event(event) -> list[ExecutionCommand]
+```
+
+The ROS node should translate external callbacks into mission events, then let
+the mission manager update state and emit any follow-up commands:
+
+```text
+ROS callback / timer / dashboard command
+  -> MissionEvent
+  -> MissionManager.handle_event(...)
+  -> ExecutionCommand list
+  -> MissionManagerNode dispatches commands
+```
+
+Start with only the events the current system already needs:
+
+```text
+MissionStartRequested
+ExecutionCommandCompleted
+ExecutionCommandFailed
+```
+
+Then add future events as features become real:
+
+```text
+OperatorPauseRequested
+OperatorResumeRequested
+OperatorAbortRequested
+OperatorApproved
+RetryTimerExpired
+TaskTimeoutExpired
+ManualPackageConfirmed
+RobotAvailabilityChanged
+ResourceStateChanged
+```
+
+Use a small hierarchy for grouping, but keep behavior-specific events explicit:
+
+```text
+MissionEvent
+  OperatorEvent
+    OperatorPauseRequested
+    OperatorResumeRequested
+    OperatorAbortRequested
+  ExecutionEvent
+    ExecutionCommandCompleted
+    ExecutionCommandFailed
+  TimerEvent
+    RetryTimerExpired
+    TaskTimeoutExpired
+```
+
+Avoid making the mission manager string-driven through a generic event such as:
+
+```python
+OperatorCommandEvent(command="pause")
+```
+
+If two cases produce different mission behavior, represent them as different
+event classes. If they only differ by metadata, use one event class with fields.
+For example, `ExecutionCommandCompleted` can carry `source =
+"task_summary" | "nav2_result" | "handling_timer"` rather than
+creating separate completion event classes for each source.
+
+`handle_event(...)` should route events to focused private handlers instead of
+becoming one large function:
+
+```python
+def handle_event(self, event):
+    if isinstance(event, MissionStartRequested):
+        commands = self._handle_start_requested(event)
+    elif isinstance(event, ExecutionCommandCompleted):
+        commands = self._handle_command_completed(event)
+    elif isinstance(event, OperatorPauseRequested):
+        commands = self._handle_operator_pause_requested(event)
+    else:
+        commands = []
+
+    return self._advance_after_event(commands)
+```
+
+This keeps the useful event-driven model while making synchronization more
+explicit. Parallelism still comes from multiple in-flight `ExecutionCommand`
+objects. The mission manager only needs to wake when meaningful state changes:
+
+```text
+command completed
+operator made a decision
+retry delay expired
+timeout expired
+manual confirmation arrived
+resource or robot state changed
+```
+
+This should be treated as a moderate orchestration refactor, not a full
+architecture rewrite. `MissionWorld`, `ResourceManager`, `ExecutionManager`,
+`TransportTaskScheduler`, `TransportTaskBtRunner`, and `RmfExecutionAdapter`
+can mostly remain in their current roles.
+
+---
+
+## 15. Suggested implementation order
+
+### Step 1: Add a small mission-event facade
+
+Introduce `MissionEvent` classes and `MissionManager.handle_event(...)` for the
+events the system already handles:
+
+```text
+MissionStartRequested
+ExecutionCommandCompleted
+ExecutionCommandFailed
+```
+
+Keep `start()` and `complete_command()` as compatibility wrappers at first, or
+replace their call sites in `MissionManagerNode` directly. The goal is to
+preserve current behavior while creating the extension point needed for
+operator decisions, retries, timeouts, and manual confirmations.
+
+### Step 2: Add explicit return-home behavior
 
 Add mission-layer return-home commands after all package transport tasks
 succeed:
@@ -564,7 +769,7 @@ mission COMPLETED only after both robots reach home
 
 This is clearer than relying on RMF or fleet-adapter finishing behavior.
 
-### Step 2: Add explicit dependency and blocked-state fields
+### Step 3: Add explicit dependency and blocked-state fields
 
 Add fields such as:
 
@@ -580,9 +785,9 @@ preconditions
 
 This gives immediate value to the mission layer and dashboard.
 
-### Step 3: Make reservations and leases primary
+### Step 4: Make reservations and leases primary
 
-Upgrade `WorldResourceManager` so transfer access is based on:
+Upgrade `ResourceManager` so transfer access is based on:
 
 ```text
 leases
@@ -594,29 +799,35 @@ release rules
 
 This is the most important change for shared-resource collaboration.
 
-### Step 4: Add event-driven wakeups and configurable waiting policy
+### Step 5: Add event-driven wakeups and configurable waiting policy
 
 Wake blocked tasks when package, resource, robot, or wait-point state changes.
 Configure waiting behavior per mission or resource so robots can wait at a
 directional exit, home, or their current position as appropriate for the map.
 
-### Step 5: Add failure, cancellation, pause, and recovery paths
+### Step 6: Add failure, cancellation, pause, and recovery paths
 
 Extend the orchestrator, BT runner, execution manager, and RMF adapter so task failures become structured states with recovery options.
 
-### Step 6: Replace simulated handling timers
+Start by wiring failed execution commands into the mission manager and BT
+runner. The initial behavior can simply mark the owning task `FAILED`, clear
+its active command, record the failure reason, and mark the mission `FAILED`
+when recovery is not available. Add retries and fallback branches only after
+that failure path is explicit and visible in `mission_state`.
+
+### Step 7: Replace simulated handling timers
 
 Replace fake `HANDLE_ITEM` completion with real, simulated, or operator-confirmed pickup/dropoff confirmation.
 
-### Step 7: Introduce capabilities and dynamic assignment
+### Step 8: Introduce capabilities and dynamic assignment
 
 Move from fixed robot-task assignment to role/capability-based allocation.
 
-### Step 8: Improve the dashboard API
+### Step 9: Improve the dashboard API
 
 Expose dependency, resource, lease, blocked, confidence, and intervention state to the UI.
 
-### Step 9: Reassess BT tooling
+### Step 10: Reassess BT tooling
 
 Keep the custom BT while the tree remains small. If recovery behavior becomes
 large enough to need visualization, introspection, standard composites, or
@@ -624,7 +835,7 @@ blackboard tooling, consider migrating to `py_trees`.
 
 ---
 
-## 15. Recommended target architecture
+## 16. Recommended target architecture
 
 ```text
 Central mission layer:
@@ -658,7 +869,7 @@ Dashboard:
 
 ---
 
-## 16. Main takeaway
+## 17. Main takeaway
 
 The best next step is not to fully decentralize the system. The best next step is to strengthen the centralized mission layer so that collaboration is:
 

@@ -9,13 +9,17 @@ from .mission_definition import (
 )
 from .mission_tasks import MissionTaskStatus, TransportItemTask, TransportTaskPhase
 from .resources import ResourceAccessStatus
-from .world import RuntimeWorld, WorldRobotStatus
+from .world import MissionWorld, RobotStatus
 
 
 class TransportTaskBtRunner:
-    def __init__(self, world: RuntimeWorld, execution: ExecutionManager):
+    """Runs the behavior-tree sequence for one transport task."""
+
+    def __init__(self, world: MissionWorld, execution_manager: ExecutionManager):
+        """Create the fixed transport sequence used by each package task."""
+
         self.world = world
-        self.execution = execution
+        self.execution_manager = execution_manager
         self.tree = MemorySequence(
             "transport_item",
             [
@@ -40,16 +44,24 @@ class TransportTaskBtRunner:
         )
 
     def start(self, task: TransportItemTask) -> list[ExecutionCommand]:
+        """Mark a task running and advance it for the first time."""
+
         if task.robot_id is None:
             return []
+        
         task.status = MissionTaskStatus.RUNNING
         task.phase = TransportTaskPhase.ACQUIRE_PICKUP
+        
         return self.advance(task)
 
     def advance(self, task: TransportItemTask) -> list[ExecutionCommand]:
+        """Tick the task behavior tree and return emitted commands."""
+
         if task.robot_id is None:
             return []
-        result = self.tree.tick(TransportTaskContext(task, self.world, self.execution))
+        
+        result = self.tree.tick(TransportTaskContext(task, self.world, self.execution_manager))
+        
         return result.commands
 
     def handle_command_succeeded(
@@ -57,6 +69,8 @@ class TransportTaskBtRunner:
         task: TransportItemTask,
         command: ExecutionCommand,
     ) -> list[ExecutionCommand]:
+        """Update world state for a completed command, then advance the task."""
+
         if task.active_command_id != command.command_id:
             return []
 
@@ -73,23 +87,34 @@ class TransportTaskBtRunner:
 
 
 class AssignRobot(BtNode):
+    """Claims the task's assigned robot when it is idle."""
+
     def tick(self, ctx: TransportTaskContext) -> BtResult:
+        """Assign the robot to the task or wait until it becomes idle."""
+
         task = ctx.task
         robot = ctx.world.robots[task.robot_id]
+
         if robot.active_task_id == task.task_id:
             return BtResult(BtStatus.SUCCESS)
-        if robot.status != WorldRobotStatus.IDLE:
+        
+        if robot.status != RobotStatus.IDLE:
             return BtResult(BtStatus.RUNNING)
+        
         ctx.world.assign_robot(task.robot_id, task.task_id)
         task.status = MissionTaskStatus.RUNNING
         return BtResult(BtStatus.SUCCESS)
 
 
 class RequestResourceAccess(BtNode):
+    """Requests access to a managed pickup or dropoff resource."""
+
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
 
     def tick(self, ctx: TransportTaskContext) -> BtResult:
+        """Request resource access and set task wait/block details when denied."""
+
         task = ctx.task
         resource_id = getattr(task, self.endpoint)
         acquired_key = f"{self.endpoint}_resource_acquired"
@@ -100,7 +125,7 @@ class RequestResourceAccess(BtNode):
 
         purpose = self.endpoint
         task.phase = self._acquire_phase()
-        decision = ctx.world.resources_manager.request_access(
+        decision = ctx.world.resource_manager.request_access(
             resource_id,
             task.robot_id,
             purpose,
@@ -130,6 +155,8 @@ class RequestResourceAccess(BtNode):
         ctx: TransportTaskContext,
         decision,
     ) -> BtResult:
+        """Move to a wait waypoint or mark the task blocked at the resource."""
+
         task = ctx.task
         resource_id = getattr(task, self.endpoint)
         wait_waypoint = decision.target
@@ -142,7 +169,7 @@ class RequestResourceAccess(BtNode):
             return BtResult(BtStatus.RUNNING)
         if ctx.world.robots[task.robot_id].location != wait_waypoint:
             task.status = MissionTaskStatus.RUNNING
-            return MoveTo(wait_waypoint, TransportTaskPhase.MOVE_TO_STAGING).tick(ctx)
+            return MoveTo(wait_waypoint, TransportTaskPhase.MOVE_TO_WAIT_POINT).tick(ctx)
 
         task.phase = TransportTaskPhase.WAIT_FOR_RESOURCE
         task.status = MissionTaskStatus.BLOCKED
@@ -191,31 +218,45 @@ class RequestResourceAccess(BtNode):
 
 
 class MoveTo(BtNode):
+    """Emits a move command until the robot reaches the target waypoint."""
+
     def __init__(self, target: str, phase: TransportTaskPhase):
         self.target = target
         self.phase = phase
 
     def tick(self, ctx: TransportTaskContext) -> BtResult:
+        """Create a move command unless the robot is already at the target."""
+
         task = ctx.task
         target = getattr(task, self.target, self.target)
+        
         task.phase = self.phase
+        
         if ctx.world.robots[task.robot_id].location == target:
             return BtResult(BtStatus.SUCCESS)
+        
         if task.active_command_id is not None:
             return BtResult(BtStatus.RUNNING)
 
         task.status = MissionTaskStatus.RUNNING
-        command = ctx.execution.create_move(task.task_id, task.robot_id, target)
+        
+        command = ctx.execution_manager.create_move(task.task_id, task.robot_id, target)
+        
         task.active_command_id = command.command_id
+        
         return BtResult(BtStatus.RUNNING, [command])
 
 
 class HandleItem(BtNode):
+    """Emits a package load or unload command."""
+
     def __init__(self, handling_type: str, phase: TransportTaskPhase):
         self.handling_type = handling_type
         self.phase = phase
 
     def tick(self, ctx: TransportTaskContext) -> BtResult:
+        """Create a package handling command unless the item is already handled."""
+
         task = ctx.task
         item = ctx.world.items[task.item_id]
         if self.handling_type == "load" and item.carried_by == task.robot_id:
@@ -231,7 +272,7 @@ class HandleItem(BtNode):
 
         task.phase = self.phase
         task.status = MissionTaskStatus.RUNNING
-        command = ctx.execution.create_handling(
+        command = ctx.execution_manager.create_handling(
             task.task_id,
             task.robot_id,
             task.item_id,
@@ -242,26 +283,34 @@ class HandleItem(BtNode):
 
 
 class MarkResourceOccupied(BtNode):
+    """Marks a managed resource as occupied by the task robot."""
+
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
 
     def tick(self, ctx: TransportTaskContext) -> BtResult:
+        """Record robot occupancy after resource access has been acquired."""
+
         task = ctx.task
         resource_id = getattr(task, self.endpoint)
         acquired_key = f"{self.endpoint}_resource_acquired"
         if resource_id not in ctx.world.resources or not task.bt_blackboard.get(acquired_key):
             return BtResult(BtStatus.SUCCESS)
 
-        ctx.world.occupy_resource(resource_id, task.robot_id)
+        ctx.world.resource_manager.occupy(resource_id, task.robot_id)
         return BtResult(BtStatus.SUCCESS)
 
 
 class UpdateResourceAfterHandling(BtNode):
+    """Updates package occupancy after a load or unload at a resource."""
+
     def __init__(self, endpoint: str, handling_type: str):
         self.endpoint = endpoint
         self.handling_type = handling_type
 
     def tick(self, ctx: TransportTaskContext) -> BtResult:
+        """Update the managed resource's package buffer after handling."""
+
         task = ctx.task
         resource_id = getattr(task, self.endpoint)
         acquired_key = f"{self.endpoint}_resource_acquired"
@@ -269,17 +318,21 @@ class UpdateResourceAfterHandling(BtNode):
             return BtResult(BtStatus.SUCCESS)
 
         if self.handling_type == "load":
-            ctx.world.release_item(resource_id, task.item_id)
+            ctx.world.resource_manager.release_item(resource_id, task.item_id)
         elif self.handling_type == "unload":
-            ctx.world.buffer_item(resource_id, task.item_id)
+            ctx.world.resource_manager.buffer_item(resource_id, task.item_id)
         return BtResult(BtStatus.SUCCESS)
 
 
 class VacateResourceIfManaged(BtNode):
+    """Moves the robot to its side-specific exit after using a resource."""
+
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
 
     def tick(self, ctx: TransportTaskContext) -> BtResult:
+        """Move out of a managed resource when an exit waypoint exists."""
+
         task = ctx.task
         resource_id = getattr(task, self.endpoint)
         if resource_id not in ctx.world.resources:
@@ -295,6 +348,8 @@ class VacateResourceIfManaged(BtNode):
 
 
 class ReleaseResourceIfManaged(BtNode):
+    """Releases a managed resource lease and robot occupancy."""
+
     def __init__(self, endpoint: str):
         self.endpoint = endpoint
 
@@ -305,18 +360,22 @@ class ReleaseResourceIfManaged(BtNode):
         if resource_id not in ctx.world.resources or not task.bt_blackboard.get(acquired_key):
             return BtResult(BtStatus.SUCCESS)
 
-        ctx.world.release_resource(resource_id, task.robot_id)
+        ctx.world.resource_manager.release(resource_id, task.robot_id)
         task.bt_blackboard[acquired_key] = False
         return BtResult(BtStatus.SUCCESS)
 
 
 class ReleaseRobot(BtNode):
+    """Marks the task robot as idle."""
+
     def tick(self, ctx: TransportTaskContext) -> BtResult:
         ctx.world.release_robot(ctx.task.robot_id)
         return BtResult(BtStatus.SUCCESS)
 
 
 class MarkTaskSucceeded(BtNode):
+    """Marks the transport task as complete."""
+
     def tick(self, ctx: TransportTaskContext) -> BtResult:
         ctx.task.phase = TransportTaskPhase.DONE
         ctx.task.status = MissionTaskStatus.SUCCEEDED

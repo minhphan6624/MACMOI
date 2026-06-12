@@ -422,7 +422,7 @@ Create the new in-process runtime modules without switching the ROS node first:
 
 ```text
 MissionManager
-RuntimeWorld
+MissionWorld
 TransportTaskScheduler
 ExecutionManager
 ```

@@ -2,30 +2,15 @@ from .resources import (
     ResourceAccessDecision,
     ResourceAccessStatus,
     ResourceLease,
-    ResourceReservation,
     ResourceState,
 )
 
 
-class WorldResourceManager:
-    def __init__(
-        self,
-        resources: dict[str, ResourceState],
-        transfer_resource_id: str = "transfer",
-    ):
-        self.resources = resources
-        self.transfer_resource_id = transfer_resource_id
+class ResourceManager:
+    """Applies access, lease, occupancy, and package-buffer rules."""
 
-    def can_acquire(
-        self,
-        resource_id: str,
-        actor_id: str,
-        purpose: str,
-        item_id: str | None = None,
-    ) -> bool:
-        return self.request_access(resource_id, actor_id, purpose, item_id).status == (
-            ResourceAccessStatus.GRANTED
-        )
+    def __init__(self, resources: dict[str, ResourceState]):
+        self.resources = resources
 
     def request_access(
         self,
@@ -35,9 +20,13 @@ class WorldResourceManager:
         item_id: str | None = None,
         task_id: str | None = None,
     ) -> ResourceAccessDecision:
+        """Grant, wait, or block access to a managed mission resource."""
+
         resource = self.resources[resource_id]
 
         def wait(reason: str, blocked_by: str | None = None) -> ResourceAccessDecision:
+            """Build a wait decision when a wait waypoint exists, otherwise block."""
+
             wait_waypoint = self._wait_waypoint(resource, actor_id)
             if wait_waypoint is not None:
                 return ResourceAccessDecision(
@@ -87,12 +76,13 @@ class WorldResourceManager:
 
     def _grant_lease(
         self,
-        resource: ResourceState,
-        actor_id: str,
+        resource: ResourceState, actor_id: str,
         purpose: str,
         item_id: str | None,
         task_id: str | None,
     ) -> None:
+        """Create a resource lease when one is not already active."""
+
         if resource.active_lease is not None:
             return
         resource.active_lease = ResourceLease(
@@ -102,27 +92,6 @@ class WorldResourceManager:
             purpose=purpose,
             item_id=item_id,
         )
-
-    def reserve(
-        self,
-        resource_id: str,
-        reservation_id: str,
-        owner_id: str,
-        actor_id: str,
-        purpose: str,
-        item_id: str | None = None,
-    ) -> ResourceReservation:
-        reservation = ResourceReservation(
-            reservation_id=reservation_id,
-            resource_id=resource_id,
-            owner_id=owner_id,
-            actor_id=actor_id,
-            purpose=purpose,
-            item_id=item_id,
-        )
-        self.resources[resource_id].reservations[reservation_id] = reservation
-
-        return reservation
 
     def occupy(self, resource_id: str, actor_id: str) -> None:
         resource = self.resources[resource_id]
@@ -145,9 +114,3 @@ class WorldResourceManager:
         resource = self.resources[resource_id]
         if item_id in resource.package_occupancy:
             resource.package_occupancy.remove(item_id)
-
-    def set_waiting_actor(self, actor_id: str, item_id: str) -> None:
-        return
-
-    def clear_waiting_actor(self, actor_id: str) -> None:
-        return

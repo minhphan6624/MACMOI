@@ -1,3 +1,5 @@
+''' Constants that are specific to the mission'''
+
 FLEET_NAME = "tb3_lab"
 
 UPSTREAM_ROBOT = "tb3_1"

@@ -2,20 +2,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 
-class MissionTaskType(Enum):
-    TRANSPORT_ITEM = "transport_item"
-
-
-class MissionStatus(Enum):
-    CREATED = "CREATED"
-    READY = "READY"
-    RUNNING = "RUNNING"
-    PAUSED = "PAUSED"
-    COMPLETED = "COMPLETED"
-    ABORTED = "ABORTED"
-
-
 class MissionTaskStatus(Enum):
+    """Lifecycle state for one mission task instance."""
+
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     BLOCKED = "BLOCKED"
@@ -25,12 +14,14 @@ class MissionTaskStatus(Enum):
 
 
 class TransportTaskPhase(Enum):
+    """Current step inside a transport-item task."""
+
     NOT_STARTED = "NOT_STARTED"
     ACQUIRE_PICKUP = "ACQUIRE_PICKUP"
     MOVE_TO_PICKUP = "MOVE_TO_PICKUP"
     LOAD_ITEM = "LOAD_ITEM"
     ACQUIRE_DROPOFF = "ACQUIRE_DROPOFF"
-    MOVE_TO_STAGING = "MOVE_TO_STAGING"
+    MOVE_TO_WAIT_POINT = "MOVE_TO_WAIT_POINT"
     MOVE_TO_TRANSFER_EXIT = "MOVE_TO_TRANSFER_EXIT"
     WAIT_FOR_RESOURCE = "WAIT_FOR_RESOURCE"
     MOVE_TO_DROPOFF = "MOVE_TO_DROPOFF"
@@ -40,14 +31,14 @@ class TransportTaskPhase(Enum):
 
 @dataclass
 class TransportItemTask:
+    """Mission task that moves one package from pickup to dropoff."""
+
     task_id: str
     item_id: str
     pickup: str
     dropoff: str
     robot_id: str | None = None
     status: MissionTaskStatus = MissionTaskStatus.PENDING
-    task_type: MissionTaskType = MissionTaskType.TRANSPORT_ITEM
-    required_resources: list[str] = field(default_factory=list)
     phase: TransportTaskPhase = TransportTaskPhase.NOT_STARTED
     active_command_id: str | None = None
     waiting_resource_id: str | None = None
