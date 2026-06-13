@@ -105,12 +105,9 @@ class MissionManagerNode(Node):
             MISSION_EVENTS_TOPIC,
             events_qos,
         )
-        self.create_subscription(
-            String,
-            MISSION_COMMANDS_TOPIC,
-            self._handle_mission_command,
-            10,
-        )
+
+        # ==== Subscriptions
+        self.create_subscription(String,MISSION_COMMANDS_TOPIC, self._handle_mission_command, 10)
         self.execution_command_pub = self.create_publisher(
             String,
             MISSION_EXECUTION_COMMANDS_TOPIC,
@@ -179,13 +176,6 @@ class MissionManagerNode(Node):
             )
         self._publish_mission_state()
 
-    def _is_terminal_command(self, command: ExecutionCommand) -> bool:
-        return command.status in (
-            ExecutionCommandStatus.SUCCEEDED,
-            ExecutionCommandStatus.FAILED,
-            ExecutionCommandStatus.CANCELLED,
-        )
-
     def _complete_execution_command(
         self,
         command_id: str,
@@ -244,7 +234,11 @@ class MissionManagerNode(Node):
             return
 
         command = self.mission_manager.execution_manager.commands.get(command_id)
-        if command is None or self._is_terminal_command(command):
+        if command is None or command.status in (
+            ExecutionCommandStatus.SUCCEEDED,
+            ExecutionCommandStatus.FAILED,
+            ExecutionCommandStatus.CANCELLED,
+        ):
             return
 
         status = result.get("status")
@@ -393,15 +387,6 @@ class MissionManagerNode(Node):
         self.recent_actions.append(action_dict)
         self.recent_actions = self.recent_actions[-20:]
 
-    def _debug_context(self) -> dict:
-        return {
-            "last_event": self.last_event,
-            "last_action": self.last_action,
-            "recent_events": self.recent_events,
-            "recent_actions": self.recent_actions,
-            "active_handling_commands": self.active_handling_commands,
-        }
-
     def _publish_mission_state(self) -> None:
         """Publish the current serialized mission state."""
 
@@ -421,7 +406,13 @@ class MissionManagerNode(Node):
             serialize_mission_debug_state(
                 self.mission_manager,
                 self.rmf_adapter,
-                self._debug_context(),
+                {
+                    "last_event": self.last_event,
+                    "last_action": self.last_action,
+                    "recent_events": self.recent_events,
+                    "recent_actions": self.recent_actions,
+                    "active_handling_commands": self.active_handling_commands,
+                },
             )
         )
         self.mission_debug_state_pub.publish(debug_msg)
