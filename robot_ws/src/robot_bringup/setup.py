@@ -13,6 +13,7 @@ setup(
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
+        ('share/' + package_name + '/config/zenoh', glob('config/zenoh/*.json5')),
         ('share/' + package_name + '/maps', glob('maps/*.yaml')),
         ('share/' + package_name + '/maps', glob('maps/*.pgm')),
     ],

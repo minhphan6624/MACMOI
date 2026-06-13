@@ -188,6 +188,9 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ```
 
 The bridge namespaces must match the fleet robot names: `tb3_1` and `tb3_2`.
+Versioned templates are installed by `robot_bringup` from
+`config/zenoh/`; copy the matching file to `~/zenoh/config/` on each robot
+before starting the bridge.
 
 ## 2.3. Launch RMF And Free Fleet
 

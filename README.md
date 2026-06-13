@@ -82,7 +82,8 @@ RMF task summaries are still used as a secondary completion path.
 
 Robot-side Zenoh bridge configs are expected to live on each robot, commonly
 under `~/zenoh/config/`, and should expose namespaces matching the fleet robot
-names: `tb3_1` and `tb3_2`.
+names: `tb3_1` and `tb3_2`. Versioned templates live in
+`robot_ws/src/robot_bringup/config/zenoh/`.
 
 ## Build
 
