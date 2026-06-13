@@ -236,6 +236,13 @@ The node publishes RMF movement requests for `MOVE_ROBOT` commands and publishes
 `mission_execution_results`. Movement requests are sent to RMF as composed
 `go_to_place` robot tasks.
 
+Movement command completion is driven by `mission_execution_results`, not RMF
+`task_summaries`. The Free Fleet Nav2 adapter verifies the final robot pose is
+within `verified_arrival_tolerance_m` before publishing a successful movement
+result and before calling RMF `execution.finished()`. RMF task summaries remain
+useful lifecycle/debug events, but they do not advance the mission behavior tree
+or start item handling.
+
 Handling command payloads include `mission_id`, `command_id`, `task_id`,
 `robot_id`, `item_id`, and `handling_type`. The mission manager updates item
 state only after it receives the matching execution result.
@@ -339,9 +346,8 @@ ros2 topic echo --full-length /mission_debug_state std_msgs/msg/String \
 Useful execution-completion logs:
 
 ```text
-Published mission execution result: ...
+Published mission execution result: ... "arrival_verified": true ...
 Mission command completed from nav2_result: cmd_X
-Mission command completed from task_summary: cmd_X
 ```
 
 # 3. Optional: Web UI Run

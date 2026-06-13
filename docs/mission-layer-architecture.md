@@ -445,36 +445,38 @@ best-effort and does not decide command success.
 
 ---
 
-## Movement Completion Paths
+## Movement Completion Path
 
-Movement completion can reach the mission manager through multiple paths.
-
-Primary path:
+Movement is still dispatched through RMF, but mission command completion is
+driven by verified Free Fleet/Nav2 execution results.
 
 ```text
 MissionManagerNode publishes mission_execution_commands
 free_fleet Nav2 adapter attaches the command context to the next navigation goal
 Nav2 reports the goal succeeded
+free_fleet Nav2 adapter computes final_pose, target_pose, and distance_to_target
+free_fleet Nav2 adapter verifies arrival before calling RMF execution.finished()
 free_fleet Nav2 adapter publishes mission_execution_results
 MissionManagerNode calls mission_manager.complete_command(command_id)
 ```
 
-Secondary path:
+RMF task summaries are lifecycle/debug events only:
 
 ```text
 task_summaries:
   RMF task summary reports STATE_COMPLETED
   mission node maps rmf_task_id -> command_id
+  mission node records the lifecycle event
 ```
 
 The mission layer no longer completes commands from inferred `/fleet_states`
-pose or mode. Movement completion should come from explicit execution results
-or RMF task summaries.
+pose or mode. It also does not complete movement from RMF task summaries because
+they do not include final pose or verified arrival distance.
 
 Expected direct completion logs:
 
 ```text
-Published mission execution result: {... "status": "SUCCEEDED", "source": "nav2_result" ...}
+Published mission execution result: {... "status": "SUCCEEDED", "source": "nav2_result", "arrival_verified": true ...}
 Mission command completed from nav2_result: cmd_X
 ```
 

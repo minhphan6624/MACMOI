@@ -372,7 +372,8 @@ The current system uses RMF as the movement execution bridge between the mission
   - RMF task dispatching accepts the request, 
   - the Free Fleet adapter receives a `go_to_place` command, 
   - the adapter sends a Nav2 `NavigateToPose` goal, 
-  - and completion is reported back through RMF task summaries and the mission execution result channel.
+  - the adapter verifies final arrival distance before calling RMF `execution.finished()`,
+  - and mission completion is reported back through the mission execution result channel.
 
 This is useful because it keeps the system aligned with RMF task and fleet infrastructure. However, for the current TurtleBot3-only handoff workflow, RMF is not the source of truth for collaboration semantics. The mission layer
 already decides:
@@ -399,7 +400,7 @@ MissionManager
   -> rmf_task_dispatcher
   -> Free Fleet adapter
   -> Nav2 NavigateToPose
-  -> task_summaries / mission_execution_results
+  -> mission_execution_results
   -> MissionManager.complete_command(...)
 ```
 
@@ -459,8 +460,8 @@ RMF modules for the intended use case:
   do not use as the navigation source of truth in direct_nav2 mode
 
 - RMF task API / task summaries:
-  use in rmf backend mode and for comparison; do not rely on them as the
-  mission completion source in direct_nav2 mode
+  use in rmf backend mode for dispatch and lifecycle/debug visibility; do not
+  rely on them as the mission completion source
 
 RMF modules that are not central to the intended use case:
 
@@ -483,7 +484,7 @@ Kept:
 
 Bypassed or optional:
   rmf_task_dispatcher
-  RMF task summaries as the mission completion source
+  RMF task summaries for mission completion
   RMF lane-level scheduling for transfer conflict ownership
 
 Removed only after replacement exists:
@@ -772,8 +773,11 @@ implicit. Different ROS callbacks call different mission-manager methods:
 mission command start
   -> MissionManager.start()
 
-RMF task summary / Nav2 result / robot handling result
+Nav2 result / robot handling result
   -> MissionManager.complete_command(command_id)
+
+RMF task summaries are recorded as mission events, but they no longer call
+`MissionManager.complete_command(...)`.
 
 MissionManager.start() and MissionManager.complete_command(...)
   -> tick()
@@ -848,7 +852,7 @@ OperatorCommandEvent(command="pause")
 If two cases produce different mission behavior, represent them as different
 event classes. If they only differ by metadata, use one event class with fields.
 For example, `ExecutionCommandCompleted` can carry `source =
-"task_summary" | "nav2_result" | "robot_handling_simulator"` rather than
+"nav2_result" | "nav2_already_near_target" | "robot_handling_simulator"` rather than
 creating separate completion event classes for each source.
 
 `handle_event(...)` should route events to focused private handlers instead of

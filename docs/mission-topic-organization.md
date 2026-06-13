@@ -49,8 +49,9 @@ Purpose: tells the mission node whether RMF accepted a task request.
 
 Type: `rmf_task_msgs/msg/TaskSummary`
 
-Purpose: reports RMF task completion. This is one mission command completion
-source.
+Purpose: reports RMF task lifecycle state. The mission node records completed
+summaries for debug/lifecycle visibility, but does not use them to complete
+mission movement commands or start item handling.
 
 `mission_commands`
 
@@ -68,6 +69,11 @@ Purpose: receives direct execution results from the execution bridge, such as
 Free Fleet/Nav2 reporting that a mission command succeeded or failed.
 
 Audience: execution bridge publishes here.
+
+For `MOVE_ROBOT`, this is the authoritative mission completion topic. Free
+Fleet publishes `arrival_verified`, `final_pose`, `target_pose`, and
+`distance_to_target`; mission movement only advances when `arrival_verified` is
+true.
 
 ## Topic Design Rule
 
@@ -214,7 +220,7 @@ Example events:
 ```json
 {"type":"MissionStarted","mission_id":"m1"}
 {"type":"TaskBlocked","task_id":"P1:transfer_to_destination","reason":"PACKAGE_NOT_AVAILABLE"}
-{"type":"ExecutionCommandCompleted","command_id":"cmd_3","source":"task_summary"}
+{"type":"ExecutionCommandCompleted","command_id":"cmd_3","source":"nav2_result"}
 {"type":"MissionCompleted","mission_id":"m1"}
 ```
 

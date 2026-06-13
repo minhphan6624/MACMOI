@@ -67,7 +67,9 @@ mission_manager -> mission_execution_commands -> free_fleet Nav2 adapter
 free_fleet Nav2 adapter -> mission_execution_results -> mission_manager
 ```
 
-RMF task summaries are still used as a secondary completion path.
+The Free Fleet adapter verifies final arrival distance before it calls
+`execution.finished()` for RMF. RMF task summaries are recorded for lifecycle
+visibility, but they do not advance mission commands or start item handling.
 
 ## Prerequisites
 
@@ -279,9 +281,8 @@ The mission topics above are JSON strings. Pipe the `data` field through
 Expected movement completion logs:
 
 ```text
-Published mission execution result: ...
+Published mission execution result: ... "arrival_verified": true ...
 Mission command completed from nav2_result: cmd_X
-Mission command completed from task_summary: cmd_X
 ```
 
 ## Optional Web Interface

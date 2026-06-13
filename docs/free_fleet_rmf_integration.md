@@ -162,17 +162,23 @@ modeling.
 
 # 8. Mission Execution Feedback
 
-Mission movement completion has a direct side-channel in addition to RMF task
-summaries:
+Mission movement completion uses a mission-specific execution result channel:
 
 ```text
 mission_manager -> mission_execution_commands -> free_fleet Nav2 adapter
 free_fleet Nav2 adapter -> mission_execution_results -> mission_manager
 ```
 
-The adapter publishes a mission execution result when Nav2 reports that the
-goal succeeded. The mission manager still keeps RMF task-summary and fleet-state
-fallbacks for integration robustness.
+The adapter publishes a successful mission execution result only after Nav2
+reports success and the adapter verifies the final robot pose is within
+`verified_arrival_tolerance_m` of the target. The same verification is applied
+to the adapter's already-near-target shortcut before it skips an orientation-only
+Nav2 goal.
+
+RMF task summaries remain useful for lifecycle visibility, but they are not a
+mission command completion source. This keeps physical handling gated by
+robot-side arrival verification instead of RMF's lossy `STATE_COMPLETED`
+summary.
 
 Package load/unload completion does not go through Free Fleet. The mission
 manager publishes `HANDLE_ITEM` commands on `mission_execution_commands`, and

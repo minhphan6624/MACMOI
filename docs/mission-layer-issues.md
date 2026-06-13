@@ -147,36 +147,42 @@ eventually detect whether a robot has physically cleared the transfer region.
 
 ---
 
-## 5. Movement Completion Has Multiple Paths
+## 5. Movement Completion Uses Verified Robot-Side Results
 
-The current system has three movement completion paths.
+The current system sends movement through RMF, but mission advancement uses a
+verified robot-side result.
 
-Primary direct path:
+Movement completion path:
 
 ```text
 mission_manager publishes mission_execution_commands
 free_fleet Nav2 adapter attaches that command context
 Nav2 reports goal succeeded
-free_fleet Nav2 adapter publishes mission_execution_results
+free_fleet Nav2 adapter computes final_pose, target_pose, and distance_to_target
+free_fleet Nav2 adapter verifies distance_to_target <= verified_arrival_tolerance_m
+free_fleet Nav2 adapter publishes mission_execution_results with arrival_verified=true
+free_fleet Nav2 adapter calls RMF execution.finished()
 mission_manager completes the command
 ```
 
-Secondary completion path:
+RMF lifecycle path:
 
 ```text
 task_summaries:
   RMF reports STATE_COMPLETED for the tracked RMF task
+  mission_manager records the event for debug/lifecycle visibility
 ```
 
-This was added because physical tests showed cases where Nav2 reached a goal
-but the mission did not immediately advance from the RMF task-summary path.
+RMF `task_summaries` no longer complete mission commands because they do not
+carry final robot pose, target pose, distance-to-target, or handling-specific
+arrival verification. This avoids starting item handling from a lossy RMF
+lifecycle signal.
 
 Relevant expected logs:
 
 ```text
-Published mission execution result: ...
+Published mission execution result: ... "arrival_verified": true ...
 Mission command completed from nav2_result: cmd_X
-Mission command completed from task_summary: cmd_X
 ```
 
 Remaining limitation:
