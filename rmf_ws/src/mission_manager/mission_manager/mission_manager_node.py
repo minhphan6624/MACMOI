@@ -101,10 +101,9 @@ class MissionManagerNode(Node):
             publish_request=self._publish_api_request,
             logger=self.get_logger(),
         )
-        self.handling_timers = []
         self.recent_events = []
         self.recent_actions = []
-        self.active_handling_timers = []
+        self.active_handling_commands = []
         self.last_event = None
         self.last_action = None
 
@@ -218,6 +217,12 @@ class MissionManagerNode(Node):
 
         status = result.get("status")
         if status == "SUCCEEDED":
+            # Remove completed robot-side handling command from mission_state debug data.
+            self.active_handling_commands = [
+                command
+                for command in self.active_handling_commands
+                if command.get("command_id") != command_id
+            ]
             commands = self._complete_execution_command(
                 command_id,
                 result.get("source", "execution_result"),
@@ -229,6 +234,12 @@ class MissionManagerNode(Node):
         if status in ("FAILED", "CANCELLED"):
             error = result.get("error") or status
             self.mission_manager.execution_manager.mark_failed(command_id, error)
+            # Remove failed/cancelled robot-side handling command from mission_state debug data.
+            self.active_handling_commands = [
+                command
+                for command in self.active_handling_commands
+                if command.get("command_id") != command_id
+            ]
             self._record_event(result)
             self._publish_mission_state()
 
@@ -242,7 +253,18 @@ class MissionManagerNode(Node):
                 self.rmf_adapter.submit_command(command, self.mission_manager.runtime.world)
                 self.mission_manager.execution_manager.mark_submitted(command.command_id)
             elif command.command_type == ExecutionCommandType.HANDLE_ITEM:
-                self._start_handling_timer(command)
+                self._publish_execution_command(command)
+                # Expose the outstanding robot-side handling command in mission_state debug data.
+                self.active_handling_commands.append(
+                    {
+                        "command_id": command.command_id,
+                        "robot_id": command.robot_id,
+                        "item_id": command.item_id,
+                        "handling_type": command.handling_type,
+                    }
+                )
+                self.mission_manager.execution_manager.mark_submitted(command.command_id)
+                self.mission_manager.execution_manager.mark_running(command.command_id)
             else:
                 self.get_logger().warning(f"Unsupported execution command: {command}")
         self._publish_mission_state()
@@ -250,57 +272,25 @@ class MissionManagerNode(Node):
     def _publish_execution_command(self, command: ExecutionCommand) -> None:
         """Publish command context for external execution result producers."""
 
-        if command.target is None:
-            return
-
         msg = String()
-        msg.data = json.dumps(
-            {
-                "mission_id": self.mission_manager.runtime.mission_id,
-                "command_id": command.command_id,
-                "task_id": command.task_id,
-                "robot_id": command.robot_id,
-                "target": command.target,
-                "command_type": command.command_type.value,
-            }
-        )
-        self.execution_command_pub.publish(msg)
-
-    def _start_handling_timer(self, command: ExecutionCommand) -> None:
-        """Simulate package load/unload completion with a short ROS timer."""
-
-        seconds = 5.0
-        timer_ref = {}
-        timer_info = {
+        
+        payload = {
+            "mission_id": self.mission_manager.runtime.mission_id,
             "command_id": command.command_id,
+            "task_id": command.task_id,
             "robot_id": command.robot_id,
-            "item_id": command.item_id,
-            "handling_type": command.handling_type,
-            "seconds": seconds,
+            "command_type": command.command_type.value,
         }
-        self.active_handling_timers.append(timer_info)
-        self.mission_manager.execution_manager.mark_running(command.command_id)
 
-        def on_timer():
-            """Complete the simulated package handling command."""
+        if command.target is not None:
+            payload["target"] = command.target
+        if command.item_id is not None:
+            payload["item_id"] = command.item_id
+        if command.handling_type is not None:
+            payload["handling_type"] = command.handling_type
 
-            timer_ref["timer"].cancel()
-            if timer_info in self.active_handling_timers:
-                self.active_handling_timers.remove(timer_info)
-            self._record_event(
-                {
-                    "type": "ExecutionCommandCompleted",
-                    "command_id": command.command_id,
-                    "source": "handling_timer",
-                }
-            )
-            self.get_logger().info(
-                f"Mission command completed from handling_timer: {command.command_id}"
-            )
-            self._dispatch_commands(self.mission_manager.complete_command(command.command_id))
-
-        timer_ref["timer"] = self.create_timer(seconds, on_timer)
-        self.handling_timers.append(timer_ref["timer"])
+        msg.data = json.dumps(payload)
+        self.execution_command_pub.publish(msg)
 
     # ----- Topic publishing helpers -----
 
@@ -329,7 +319,7 @@ class MissionManagerNode(Node):
                     "last_action": self.last_action,
                     "recent_events": self.recent_events,
                     "recent_actions": self.recent_actions,
-                    "active_handling_timers": self.active_handling_timers,
+                    "active_handling_commands": self.active_handling_commands,
                 },
             )
         )

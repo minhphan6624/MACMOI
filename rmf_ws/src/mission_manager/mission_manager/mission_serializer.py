@@ -128,7 +128,7 @@ def serialize_runtime_mission_state(mission_manager, adapter=None, node_debug=No
             "last_action": debug.get("last_action"),
             "recent_events": debug.get("recent_events", []),
             "recent_actions": debug.get("recent_actions", []),
-            "active_handling_timers": debug.get("active_handling_timers", []),
+            "active_handling_commands": debug.get("active_handling_commands", []),
             **adapter_debug,
         },
     }

@@ -17,7 +17,7 @@ source /opt/ros/jazzy/setup.bash
 source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix system_rmf_bringup)/share/system_rmf_bringup
+export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
 export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 ```
 
@@ -72,13 +72,13 @@ pnpm install
 Active building file:
 
 ```text
-rmf_ws/src/system_rmf_bringup/maps/aiml-lab.building.yaml
+rmf_ws/src/rmf_bringup/maps/aiml-lab.building.yaml
 ```
 
 Active RMF nav graph:
 
 ```text
-rmf_ws/src/system_rmf_bringup/nav_graphs/1.yaml
+rmf_ws/src/rmf_bringup/nav_graphs/1.yaml
 ```
 
 Current waypoint meaning:
@@ -142,6 +142,29 @@ tb3_2 initial_pose -> [-2.7358, 2.2426, 0.0]
 Physically place the robots at those home-zone poses before launching Nav2, or
 update the initial poses to match the robots' actual physical poses.
 
+`robot.launch.py` starts one `handling_simulator_node` by default. The simulator
+listens for `HANDLE_ITEM` commands for its `robot_id`, waits
+`handling_duration_sec` seconds, and publishes a success result. It also calls
+the TurtleBot3 `sound` service as a best-effort start/end cue; simulated
+handling still succeeds if the sound service is unavailable.
+
+Disable the simulator only when replacing simulated handling with another
+confirmation source:
+
+```bash
+ros2 launch robot_bringup robot.launch.py \
+  robot_id:=tb3_1 \
+  enable_handling_simulator:=false
+```
+
+To change the simulated load/unload duration:
+
+```bash
+ros2 launch robot_bringup robot.launch.py \
+  robot_id:=tb3_1 \
+  handling_duration_sec:=3.0
+```
+
 ## 2.2. Start Zenoh
 
 On the central PC:
@@ -177,7 +200,7 @@ source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 
-ros2 launch system_rmf_bringup system.launch.py \
+ros2 launch rmf_bringup system.launch.py \
   use_sim_time:=false \
   headless:=false \
   config_file:=$FREE_FLEET_BRINGUP_SHARE/config/fleet/aiml_lab_multi_tb3_fleet.yaml
@@ -201,14 +224,18 @@ MissionManagerNode
   -> TransportTaskScheduler
   -> TransportTaskRunner
   -> ExecutionManager
-  -> RmfExecutionAdapter / handling timer
+  -> RmfExecutionAdapter / robot handling simulator
 ```
 
-The node publishes RMF movement requests for `MOVE_ROBOT` commands and uses a
-short simulated timer for `HANDLE_ITEM` load/unload commands. Movement requests
-are sent to RMF as composed `go_to_place` robot tasks. The mission node also
-publishes `mission_execution_commands` so the Free Fleet Nav2 adapter can report
-direct completion on `mission_execution_results`.
+The node publishes RMF movement requests for `MOVE_ROBOT` commands and publishes
+`HANDLE_ITEM` load/unload commands on `mission_execution_commands`. Robot-side
+`handling_simulator_node` instances simulate handling and report completion on
+`mission_execution_results`. Movement requests are sent to RMF as composed
+`go_to_place` robot tasks.
+
+Handling command payloads include `mission_id`, `command_id`, `task_id`,
+`robot_id`, `item_id`, and `handling_type`. The mission manager updates item
+state only after it receives the matching execution result.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -277,7 +304,7 @@ ros2 topic echo /mission_state std_msgs/msg/String \
 
 The `mission_state` JSON includes mission status, package locations, robot
 states, resources, transport tasks, execution commands, active RMF task IDs, and
-active handling timers.
+active handling commands.
 
 Useful execution-completion logs:
 
@@ -320,7 +347,7 @@ source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 
-ros2 launch system_rmf_bringup system.launch.py \
+ros2 launch rmf_bringup system.launch.py \
   use_sim_time:=false \
   headless:=false \
   server_uri:=http://localhost:8000/_internal \
@@ -356,9 +383,9 @@ source /opt/ros/jazzy/setup.bash
 source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix system_rmf_bringup)/share/system_rmf_bringup
+export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
 
-ros2 launch system_rmf_bringup rmf_core.launch.xml \
+ros2 launch rmf_bringup rmf_core.launch.xml \
   use_sim_time:=false \
   headless:=false \
   config_file:=$SYSTEM_RMF_SHARE/maps/aiml-lab.building.yaml \
@@ -380,7 +407,7 @@ source /opt/ros/jazzy/setup.bash
 source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix system_rmf_bringup)/share/system_rmf_bringup
+export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
 export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 
 ros2 launch free_fleet_bringup aiml_lab_ff_bringup.launch.xml \
@@ -406,7 +433,9 @@ or diagnosing a problem.
 ros2 topic list --no-daemon
 ros2 topic echo /fleet_states rmf_fleet_msgs/msg/FleetState
 ros2 topic echo /mission_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local
+ros2 topic echo /mission_execution_commands std_msgs/msg/String
 ros2 topic echo /mission_execution_results std_msgs/msg/String
+ros2 service list | grep sound
 ```
 
 ## 5.2. Direct Zenoh/Nav2 Goal
@@ -508,7 +537,7 @@ source /opt/ros/jazzy/setup.bash
 source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix system_rmf_bringup)/share/system_rmf_bringup
+export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
 
 gdb --args /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/python3 \
   /home/minhqphan/projects/MACMOI/rmf_ws/install/free_fleet_adapter/lib/free_fleet_adapter/fleet_adapter.py \
@@ -534,11 +563,11 @@ source /opt/ros/jazzy/setup.bash
 source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
 source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
 
-rm -f /home/minhqphan/projects/MACMOI/rmf_ws/src/system_rmf_bringup/nav_graphs/1.yaml
+rm -f /home/minhqphan/projects/MACMOI/rmf_ws/src/rmf_bringup/nav_graphs/1.yaml
 
 ros2 run rmf_building_map_tools building_map_generator nav \
-  /home/minhqphan/projects/MACMOI/rmf_ws/src/system_rmf_bringup/maps/aiml-lab.building.yaml \
-  /home/minhqphan/projects/MACMOI/rmf_ws/src/system_rmf_bringup/nav_graphs
+  /home/minhqphan/projects/MACMOI/rmf_ws/src/rmf_bringup/maps/aiml-lab.building.yaml \
+  /home/minhqphan/projects/MACMOI/rmf_ws/src/rmf_bringup/nav_graphs
 ```
 
 Then rebuild the bringup packages:
@@ -548,7 +577,7 @@ cd /home/minhqphan/projects/MACMOI/rmf_ws
 source /opt/ros/jazzy/setup.bash
 source .venv/bin/activate
 
-colcon build --packages-select system_rmf_bringup free_fleet_bringup --symlink-install
+colcon build --packages-select rmf_bringup free_fleet_bringup --symlink-install
 source install/setup.bash
 ```
 

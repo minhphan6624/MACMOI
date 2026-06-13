@@ -68,11 +68,11 @@ Do not move the runtime robot-side Zenoh bridge config off the Pi. It can stay i
 
 # 3.  Current Site / Map State
 
-Lab building file: `rmf_ws/src/system_rmf_bringup/maps/aiml-lab.building.yaml`
+Lab building file: `rmf_ws/src/rmf_bringup/maps/aiml-lab.building.yaml`
 
-Lab drawing: `rmf_ws/src/system_rmf_bringup/maps/aiml-lab.png`
+Lab drawing: `rmf_ws/src/rmf_bringup/maps/aiml-lab.png`
 
-Generated RMF nav graph: `rmf_ws/src/system_rmf_bringup/nav_graphs/1.yaml`
+Generated RMF nav graph: `rmf_ws/src/rmf_bringup/nav_graphs/1.yaml`
 
 The current RMF graph is intentionally minimal for the mission corridor:
 
@@ -173,6 +173,11 @@ free_fleet Nav2 adapter -> mission_execution_results -> mission_manager
 The adapter publishes a mission execution result when Nav2 reports that the
 goal succeeded. The mission manager still keeps RMF task-summary and fleet-state
 fallbacks for integration robustness.
+
+Package load/unload completion does not go through Free Fleet. The mission
+manager publishes `HANDLE_ITEM` commands on `mission_execution_commands`, and
+each robot's `handling_simulator_node` reports simulated completion on
+`mission_execution_results`.
 
 Expected logs:
 

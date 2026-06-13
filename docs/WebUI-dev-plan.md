@@ -160,7 +160,7 @@ Before polishing the UI, expose enough detail to validate behavior:
 last emitted action
 last consumed event
 active RMF task IDs
-handling timer currently running
+active handling command
 current package assigned to each robot
 current transfer occupancy/buffer state
 blocked task count
