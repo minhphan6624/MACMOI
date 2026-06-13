@@ -1,19 +1,9 @@
 import json
-from dataclasses import dataclass
 from typing import Any
-from uuid import uuid4
 
 from .execution import ExecutionCommand, ExecutionCommandType
 from .mission_definition import FLEET_NAME, REQUESTER
 from .world import MissionWorld
-
-
-@dataclass(frozen=True)
-class RmfExecutionAdapterConfig:
-    """Configuration for RMF task API requests emitted by the mission layer."""
-
-    fleet_name: str = FLEET_NAME
-    requester: str = REQUESTER
 
 
 class RmfExecutionAdapter:
@@ -21,13 +11,17 @@ class RmfExecutionAdapter:
 
     def __init__(
         self,
-        config: RmfExecutionAdapterConfig | None = None,
+        fleet_name: str = FLEET_NAME,
+        requester: str = REQUESTER,
+        mission_id: str = "mission",
         publish_request=None,
         logger=None,
     ):
         """Initialize RMF request tracking and optional publish/log hooks."""
 
-        self.config = config or RmfExecutionAdapterConfig()
+        self.fleet_name = fleet_name
+        self.requester = requester
+        self.mission_id = mission_id
         self.publish_request = publish_request
         self.logger = logger
         self.command_id_by_request_id: dict[str, str] = {}
@@ -43,10 +37,10 @@ class RmfExecutionAdapter:
         return {
             "type": "robot_task_request",
             "robot": command.robot_id,
-            "fleet": self.config.fleet_name,
+            "fleet": self.fleet_name,
             "request": {
                 "category": "compose",
-                "fleet_name": self.config.fleet_name,
+                "fleet_name": self.fleet_name,
                 "description": {
                     "category": "go_to_place",
                     "phases": [
@@ -65,14 +59,15 @@ class RmfExecutionAdapter:
                     f"command_id={command.command_id}",
                     f"task_id={command.task_id}",
                 ],
-                "requester": self.config.requester,
+                "requester": self.requester,
             },
         }
 
     def submit_command(self, command: ExecutionCommand, world: MissionWorld) -> str:
         """Publish a mission execution command as an RMF task request."""
 
-        request_id = f"mission_{uuid4()}"
+        request_id = f"{self.mission_id}_{command.command_id}"
+        
         payload = self.build_payload(command, world)
         self.command_id_by_request_id[request_id] = command.command_id
 

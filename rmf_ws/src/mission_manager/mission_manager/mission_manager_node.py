@@ -16,7 +16,7 @@ from .mission_definition import (
 )
 from .mission_serializer import action_to_dict, event_to_dict, serialize_runtime_mission_state
 from .mission_manager import MissionManager
-from .rmf_execution_adapter import RmfExecutionAdapter, RmfExecutionAdapterConfig
+from .rmf_execution_adapter import RmfExecutionAdapter
 
 
 TASK_API_REQUESTS_TOPIC = "task_api_requests"
@@ -36,7 +36,7 @@ class MissionManagerNode(Node):
 
         super().__init__("mission_manager")
 
-        self.declare_parameter("mission_id", "m1")
+        self.declare_parameter("mission_id", "new-mission")
         self.declare_parameter("total_packages", 1)
         self.declare_parameter("auto_start", False)
 
@@ -97,10 +97,11 @@ class MissionManagerNode(Node):
         )
 
         self.rmf_adapter = RmfExecutionAdapter(
-            RmfExecutionAdapterConfig(),
+            mission_id=mission_id,
             publish_request=self._publish_api_request,
             logger=self.get_logger(),
         )
+
         self.recent_events = []
         self.recent_actions = []
         self.active_handling_commands = []
