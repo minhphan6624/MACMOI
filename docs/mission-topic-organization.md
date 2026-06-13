@@ -139,18 +139,25 @@ flat topic names.
 
 `mission_state`
 
-Keep this as the compact, stable, web/UI-facing mission snapshot.
+The compact, stable, web/UI-facing mission snapshot.
 
 Recommended fields:
 
-- `mission_id`
-- `status`
-- `total_packages`
-- `delivered_count`
-- `remaining_count`
+- `schema_version`
+- `mission.id`
+- `mission.name`
+- `mission.status`
+- `mission.phase`
+- `mission.current_step`
+- `mission.total_steps`
+- `mission.active_robot`
+- `mission.current_blocker`
+- `mission.next_step`
+- `mission.last_update`
 - `packages`
 - `robots`
-- `transfer`
+- `tasks`
+- `zones`
 - `operator.active_command_count`
 - `operator.blocked_task_count`
 - `last_event`
@@ -171,15 +178,30 @@ Add this as the verbose developer/debug snapshot.
 
 Recommended fields:
 
+- `mission_id`
+- raw `status`
+- `total_packages`
+- `delivered_count`
+- `remaining_count`
+- compact `packages`
+- raw `robots`
+- `transfer`
 - `mission_tasks`
 - `resources`
 - `execution_commands`
-- `recent_events`
-- `recent_actions`
-- `active_handling_commands`
-- pending RMF request IDs
-- active RMF task IDs
-- completed RMF task IDs
+- `operator.active_command_count`
+- `operator.blocked_task_count`
+- `active_task_ids`
+- `node_online`
+- `last_update_time`
+- `debug.last_event`
+- `debug.last_action`
+- `debug.recent_events`
+- `debug.recent_actions`
+- `debug.active_handling_commands`
+- `debug.pending_request_ids`
+- `debug.active_rmf_task_ids`
+- `debug.completed_task_ids`
 
 This topic can stay large because it is not the primary UI state path.
 
@@ -278,13 +300,18 @@ publish:
   task_summaries
 ```
 
-## Practical Next Step
+## Implemented First Split
 
-Keep JSON for now, but split the serializers:
+The first split keeps JSON and separates the serializers:
 
 - `mission_state`: compact operator-facing state
 - `mission_debug_state`: current full verbose state
+- `mission_events`: timeline-style event stream
 
-After that, add `mission_events` for timeline-style inspection. This will make
-the web UI cleaner and make terminal debugging easier without losing internal
-visibility.
+The compact state only receives `last_event` from the mission node. The full
+node-local debug context stays in `mission_debug_state.debug`, where it can
+include recent event/action arrays, active handling commands, and RMF adapter
+request/task maps.
+
+This makes the web UI cleaner and makes terminal debugging easier without losing
+internal visibility.

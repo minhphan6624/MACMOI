@@ -300,14 +300,41 @@ transfer resource when mission state changes.
 Monitor the runtime state:
 
 ```bash
-ros2 topic echo /mission_state std_msgs/msg/String \
+ros2 topic echo --full-length /mission_state std_msgs/msg/String \
   --qos-reliability reliable \
-  --qos-durability transient_local
+  --qos-durability transient_local \
+  --field data
 ```
 
-The `mission_state` JSON includes mission status, package locations, robot
-states, resources, transport tasks, execution commands, active RMF task IDs, and
-active handling commands.
+The `mission_state` JSON is the compact dashboard/operator snapshot. Use the
+verbose debug topic for raw mission internals:
+
+```bash
+ros2 topic echo --full-length /mission_debug_state std_msgs/msg/String \
+  --qos-reliability reliable \
+  --qos-durability transient_local \
+  --field data
+```
+
+Mission events are also published one at a time:
+
+```bash
+ros2 topic echo --full-length /mission_events std_msgs/msg/String \
+  --qos-reliability reliable \
+  --qos-durability transient_local \
+  --field data
+```
+
+These mission topics are `std_msgs/msg/String` values containing JSON, so
+`ros2 topic echo` does not print them as typed ROS fields. For readable
+inspection, pipe the `data` field through a JSON formatter:
+
+```bash
+ros2 topic echo --full-length /mission_debug_state std_msgs/msg/String \
+  --qos-reliability reliable \
+  --qos-durability transient_local \
+  --field data | python3 -m json.tool
+```
 
 Useful execution-completion logs:
 
@@ -435,7 +462,9 @@ or diagnosing a problem.
 ```bash
 ros2 topic list --no-daemon
 ros2 topic echo /fleet_states rmf_fleet_msgs/msg/FleetState
-ros2 topic echo /mission_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local
+ros2 topic echo --full-length /mission_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local --field data
+ros2 topic echo --full-length /mission_debug_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local --field data
+ros2 topic echo --full-length /mission_events std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local --field data
 ros2 topic echo /mission_execution_commands std_msgs/msg/String
 ros2 topic echo /mission_execution_results std_msgs/msg/String
 ros2 service list | grep sound

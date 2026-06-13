@@ -14,7 +14,12 @@ from .mission_definition import (
     DOWNSTREAM_ROBOT,
     UPSTREAM_ROBOT,
 )
-from .mission_serializer import action_to_dict, event_to_dict, serialize_runtime_mission_state
+from .mission_serializer import (
+    action_to_dict,
+    serialize_mission_debug_state,
+    serialize_mission_event,
+    serialize_mission_state,
+)
 from .mission_manager import MissionManager
 from .rmf_adapter import RmfAdapter
 
@@ -23,6 +28,8 @@ TASK_API_REQUESTS_TOPIC = "task_api_requests"
 TASK_API_RESPONSES_TOPIC = "task_api_responses"
 TASK_SUMMARIES_TOPIC = "task_summaries"
 MISSION_STATE_TOPIC = "mission_state"
+MISSION_DEBUG_STATE_TOPIC = "mission_debug_state"
+MISSION_EVENTS_TOPIC = "mission_events"
 MISSION_COMMANDS_TOPIC = "mission_commands"
 MISSION_EXECUTION_COMMANDS_TOPIC = "mission_execution_commands"
 MISSION_EXECUTION_RESULTS_TOPIC = "mission_execution_results"
@@ -56,6 +63,12 @@ class MissionManagerNode(Node):
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
+        events_qos = QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=50,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
         self.api_request_pub = self.create_publisher(
             ApiRequest,
             TASK_API_REQUESTS_TOPIC,
@@ -77,6 +90,16 @@ class MissionManagerNode(Node):
             String,
             MISSION_STATE_TOPIC,
             qos,
+        )
+        self.mission_debug_state_pub = self.create_publisher(
+            String,
+            MISSION_DEBUG_STATE_TOPIC,
+            qos,
+        )
+        self.mission_events_pub = self.create_publisher(
+            String,
+            MISSION_EVENTS_TOPIC,
+            events_qos,
         )
         self.create_subscription(
             String,
@@ -218,7 +241,7 @@ class MissionManagerNode(Node):
 
         status = result.get("status")
         if status == "SUCCEEDED":
-            # Remove completed robot-side handling command from mission_state debug data.
+            # Remove completed robot-side handling command from mission_debug_state.
             self.active_handling_commands = [
                 command
                 for command in self.active_handling_commands
@@ -235,7 +258,7 @@ class MissionManagerNode(Node):
         if status in ("FAILED", "CANCELLED"):
             error = result.get("error") or status
             self.mission_manager.execution_manager.mark_failed(command_id, error)
-            # Remove failed/cancelled robot-side handling command from mission_state debug data.
+            # Remove failed/cancelled robot-side handling command from mission_debug_state.
             self.active_handling_commands = [
                 command
                 for command in self.active_handling_commands
@@ -255,7 +278,7 @@ class MissionManagerNode(Node):
                 self.mission_manager.execution_manager.mark_submitted(command.command_id)
             elif command.command_type == ExecutionCommandType.HANDLE_ITEM:
                 self._publish_execution_command(command)
-                # Expose the outstanding robot-side handling command in mission_state debug data.
+                # Expose the outstanding robot-side handling command in mission_debug_state.
                 self.active_handling_commands.append(
                     {
                         "command_id": command.command_id,
@@ -296,10 +319,19 @@ class MissionManagerNode(Node):
     # ----- Topic publishing helpers -----
 
     def _record_event(self, event) -> None:
-        event_dict = event_to_dict(event)
+        event_dict = serialize_mission_event(
+            event,
+            self.mission_manager.runtime.mission_id,
+        )
+        if event_dict is None:
+            return
         self.last_event = event_dict
         self.recent_events.append(event_dict)
         self.recent_events = self.recent_events[-20:]
+
+        msg = String()
+        msg.data = json.dumps(event_dict)
+        self.mission_events_pub.publish(msg)
 
     def _record_action(self, action) -> None:
         action_dict = action_to_dict(action)
@@ -307,24 +339,38 @@ class MissionManagerNode(Node):
         self.recent_actions.append(action_dict)
         self.recent_actions = self.recent_actions[-20:]
 
+    def _debug_context(self) -> dict:
+        return {
+            "last_event": self.last_event,
+            "last_action": self.last_action,
+            "recent_events": self.recent_events,
+            "recent_actions": self.recent_actions,
+            "active_handling_commands": self.active_handling_commands,
+        }
+
     def _publish_mission_state(self) -> None:
         """Publish the current serialized mission state."""
 
         msg = String()
         msg.data = json.dumps(
-            serialize_runtime_mission_state(
+            serialize_mission_state(
                 self.mission_manager,
                 self.rmf_adapter,
-                {
-                    "last_event": self.last_event,
-                    "last_action": self.last_action,
-                    "recent_events": self.recent_events,
-                    "recent_actions": self.recent_actions,
-                    "active_handling_commands": self.active_handling_commands,
-                },
+                self.last_event,
             )
         )
+
         self.mission_state_pub.publish(msg)
+
+        debug_msg = String()
+        debug_msg.data = json.dumps(
+            serialize_mission_debug_state(
+                self.mission_manager,
+                self.rmf_adapter,
+                self._debug_context(),
+            )
+        )
+        self.mission_debug_state_pub.publish(debug_msg)
 
 
 def main(args=None):

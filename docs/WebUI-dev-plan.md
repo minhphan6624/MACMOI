@@ -92,6 +92,168 @@ short polling
 The live stream should include mission state changes, recent events, emitted
 actions, RMF task IDs, rejected-task messages, and failure messages.
 
+### 3.1. Start With ROS Topic Payload Separation
+
+See also
+[`docs/mission-topic-organization.md`](mission-topic-organization.md) for the
+mission topic ownership rules.
+
+The first implementation target should be payload separation, not a broad topic
+rename. The current flat topic names are already used by the mission node,
+execution bridge, runbook commands, and robot-side handling simulator. Renaming
+them before the payload contract is clean would create integration churn without
+helping the web UI.
+
+Keep the existing compatibility topics initially:
+
+```text
+mission_state
+mission_commands
+mission_execution_commands
+mission_execution_results
+```
+
+Add these mission-owned observation topics:
+
+```text
+mission_debug_state
+mission_events
+```
+
+Split mission serialization into three outputs:
+
+```text
+mission_state
+  compact dashboard/operator snapshot
+
+mission_debug_state
+  verbose developer snapshot with raw internal state
+
+mission_events
+  append-style event stream for timeline, audit, and debugging
+```
+
+`mission_state` should be shaped for the dashboard contract, not for raw Python
+object inspection. It should include:
+
+```text
+mission summary:
+  mission ID
+  mission name
+  status
+  phase
+  current step
+  total steps
+  active robot
+  current blocker
+  next step
+  last update timestamp
+
+package summaries:
+  package ID
+  status
+  location
+  carried_by
+
+robot mission overlay:
+  robot ID
+  display label
+  mission state
+  active mission task
+  logical mission location
+  mission issue/waiting reason
+  active RMF task ID when known
+
+task timeline:
+  task ID
+  label
+  status
+  phase
+  assigned robot
+  pickup/start
+  dropoff/goal
+  dependencies
+  blocked reason
+  next expected event
+
+zone/resource summary:
+  source/transfer/destination/home/wait zones
+  transfer occupancy
+  transfer package buffer
+  waiting robot/package
+  active lease owner
+
+operator summary:
+  active command count
+  blocked task count
+  last event
+```
+
+The compact state should receive only `last_event` from mission-node-local
+context. Recent event arrays, recent action arrays, active handling command
+internals, and RMF adapter maps belong in `mission_debug_state`.
+
+`mission_state` should not include:
+
+```text
+raw mission task dataclasses
+raw resource objects
+raw execution command objects
+RMF adapter request maps
+completed RMF task ID sets
+long recent event/action arrays
+active handling command internals
+```
+
+Move those fields to `mission_debug_state`. That topic can stay large because
+it is for developers, rosbag inspection, and terminal debugging rather than the
+primary web UI state path.
+
+`mission_events` should publish one small JSON event at a time. Example events:
+
+```json
+{"type":"MissionStarted","mission_id":"m1"}
+{"type":"TaskBlocked","task_id":"P1:transfer_to_destination","reason":"PACKAGE_NOT_AVAILABLE"}
+{"type":"ExecutionCommandCompleted","command_id":"cmd_3","source":"task_summary"}
+{"type":"MissionCompleted","mission_id":"m1"}
+```
+
+The web dashboard should eventually assemble its `DashboardData` from multiple
+sources:
+
+```text
+mission_state:
+  mission summary, package state, mission task timeline, transfer/resource state
+
+mission_events:
+  event log and timeline history
+
+RMF web/fleet data:
+  robot battery, online/offline state, physical position, map/fleet telemetry
+
+API/UI local state:
+  selected entity, acknowledged alerts, derived warnings
+```
+
+Do not put RMF-owned telemetry such as battery level, exact robot pose, or full
+fleet health into `mission_state` just to satisfy the mock dashboard. The
+mission layer should expose collaboration semantics; RMF/web should remain the
+source for fleet telemetry.
+
+Practical implementation order:
+
+```text
+1. Done: add compact `serialize_mission_state(...)`.
+2. Done: move the current verbose payload to `serialize_mission_debug_state(...)`.
+3. Done: add `mission_debug_state` publisher in the mission node.
+4. Done: add `mission_events` publisher and emit events from `_record_event(...)`.
+5. Done: keep only `last_event` in `mission_state`; keep full debug context in debug state.
+6. Done: update README/runbook echo commands for the new split.
+7. Next: add API-server subscriptions and websocket rooms for state/events/debug.
+8. Next: replace mock dashboard data with an API-side mapper to the dashboard contract.
+9. Later: consider namespacing topics only after the web/API bridge and execution bridge are updated.
+```
+
 ---
 
 ## 4. Mission Dashboard View
@@ -519,16 +681,17 @@ controls.
 Build in this order:
 
 ```text
-1. Serialize mission state from the mission core.
-2. Expose mission lifecycle and state through an API.
-3. Add live mission updates to the dashboard.
-4. Replace mock dashboard data with API-backed data.
-5. Add mission pause/resume/abort.
-6. Add task-level intervention controls.
-7. Add robot availability controls.
-8. Add run/artifact persistence.
-9. Add rosbag/log export workflows.
-10. Add higher-level recovery actions only after the basic intervention path is reliable.
+1. Split ROS mission payloads into mission_state, mission_debug_state, and mission_events.
+2. Shape mission_state to the compact dashboard/operator contract.
+3. Expose mission lifecycle and state through the API server.
+4. Add live mission updates to the dashboard.
+5. Replace mock dashboard data with API-backed data.
+6. Add mission pause/resume/abort.
+7. Add task-level intervention controls.
+8. Add robot availability controls.
+9. Add run/artifact persistence.
+10. Add rosbag/log export workflows.
+11. Add higher-level recovery actions only after the basic intervention path is reliable.
 ```
 
 This order keeps the UI useful early while avoiding direct robot override before

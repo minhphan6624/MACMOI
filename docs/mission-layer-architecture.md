@@ -374,6 +374,8 @@ It publishes:
 ```text
 task_api_requests
 mission_state
+mission_debug_state
+mission_events
 mission_execution_commands
 ```
 

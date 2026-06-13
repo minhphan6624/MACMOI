@@ -267,9 +267,14 @@ Useful topics:
 
 ```bash
 ros2 topic echo /fleet_states rmf_fleet_msgs/msg/FleetState
-ros2 topic echo /mission_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local
+ros2 topic echo --full-length /mission_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local --field data
+ros2 topic echo --full-length /mission_debug_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local --field data
+ros2 topic echo --full-length /mission_events std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local --field data
 ros2 topic echo /mission_execution_results std_msgs/msg/String
 ```
+
+The mission topics above are JSON strings. Pipe the `data` field through
+`python3 -m json.tool` for readable terminal output.
 
 Expected movement completion logs:
 
