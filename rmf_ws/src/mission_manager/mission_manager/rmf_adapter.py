@@ -2,25 +2,21 @@ import json
 from typing import Any
 
 from .execution import ExecutionCommand, ExecutionCommandType
-from .mission_definition import FLEET_NAME, REQUESTER
+from .mission_definition import FLEET_NAME
 from .world import MissionWorld
 
 
-class RmfExecutionAdapter:
+class RmfAdapter:
     """Converts mission execution commands to RMF task API requests."""
 
     def __init__(
         self,
-        fleet_name: str = FLEET_NAME,
-        requester: str = REQUESTER,
         mission_id: str = "mission",
         publish_request=None,
         logger=None,
     ):
         """Initialize RMF request tracking and optional publish/log hooks."""
 
-        self.fleet_name = fleet_name
-        self.requester = requester
         self.mission_id = mission_id
         self.publish_request = publish_request
         self.logger = logger
@@ -37,10 +33,10 @@ class RmfExecutionAdapter:
         return {
             "type": "robot_task_request",
             "robot": command.robot_id,
-            "fleet": self.fleet_name,
+            "fleet": FLEET_NAME,
             "request": {
                 "category": "compose",
-                "fleet_name": self.fleet_name,
+                "fleet_name": FLEET_NAME,
                 "description": {
                     "category": "go_to_place",
                     "phases": [
@@ -59,7 +55,7 @@ class RmfExecutionAdapter:
                     f"command_id={command.command_id}",
                     f"task_id={command.task_id}",
                 ],
-                "requester": self.requester,
+                "requester": "mission_manager",
             },
         }
 
@@ -67,7 +63,7 @@ class RmfExecutionAdapter:
         """Publish a mission execution command as an RMF task request."""
 
         request_id = f"{self.mission_id}_{command.command_id}"
-        
+
         payload = self.build_payload(command, world)
         self.command_id_by_request_id[request_id] = command.command_id
 
@@ -89,12 +85,18 @@ class RmfExecutionAdapter:
 
         response = json.loads(msg.json_msg)
         if not response.get("success"):
-            self._log_warning(f"RMF rejected execution command: {response}")
+
+            if self.logger is not None:
+                self.logger.warning(f"RMF rejected execution command: {response}")
+
             return None
 
         task_id = self._task_id_from_response(response)
         if task_id is None:
-            self._log_warning(f"RMF command response has no task ID: {response}")
+
+            if self.logger is not None:
+                self.logger.warning(f"RMF command response has no task ID: {response}")
+
             return None
 
         self.command_id_by_rmf_task_id[task_id] = command_id
@@ -114,6 +116,7 @@ class RmfExecutionAdapter:
         return command_id
 
     def _task_id_from_response(self, response: dict[str, Any]) -> str | None:
+
         state = response.get("state")
         if not isinstance(state, dict):
             return None
@@ -124,7 +127,3 @@ class RmfExecutionAdapter:
 
         task_id = booking.get("id")
         return task_id if isinstance(task_id, str) else None
-
-    def _log_warning(self, message: str) -> None:
-        if self.logger is not None:
-            self.logger.warning(message)

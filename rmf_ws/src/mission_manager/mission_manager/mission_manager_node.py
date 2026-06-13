@@ -16,7 +16,7 @@ from .mission_definition import (
 )
 from .mission_serializer import action_to_dict, event_to_dict, serialize_runtime_mission_state
 from .mission_manager import MissionManager
-from .rmf_execution_adapter import RmfExecutionAdapter
+from .rmf_adapter import RmfAdapter
 
 
 TASK_API_REQUESTS_TOPIC = "task_api_requests"
@@ -96,7 +96,7 @@ class MissionManagerNode(Node):
             10,
         )
 
-        self.rmf_adapter = RmfExecutionAdapter(
+        self.rmf_adapter = RmfAdapter(
             mission_id=mission_id,
             publish_request=self._publish_api_request,
             logger=self.get_logger(),
