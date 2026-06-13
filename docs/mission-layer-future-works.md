@@ -446,48 +446,30 @@ Implementation changes:
 
 RMF modules for the intended use case:
 
-```text
-building_map_server:
-  use for existing dashboard map display and RMF map compatibility
+- building_map_server: use for existing dashboard map display and RMF map compatibility
 
-Free Fleet / fleet state reporting:
-  use while the web UI still needs RMF-style robot fleet visibility
+- Free Fleet / fleet state reporting: use while the web UI still needs RMF-style robot fleet visibility
 
-rmf_traffic_schedule:
-  keep while the current Free Fleet adapter is retained, because the adapter
+- rmf_traffic_schedule:keep while the current Free Fleet adapter is retained, because the adapter
   expects RMF schedule infrastructure; otherwise optional for this fixed
   mission workflow
 
-RMF nav graph and annotated building map:
+- RMF nav graph and annotated building map:
   keep for RMF fallback mode, dashboard display, and comparison experiments;
   do not use as the navigation source of truth in direct_nav2 mode
 
-RMF task API / task summaries:
+- RMF task API / task summaries:
   use in rmf backend mode and for comparison; do not rely on them as the
   mission completion source in direct_nav2 mode
-```
 
 RMF modules that are not central to the intended use case:
 
-```text
-rmf_task_dispatcher:
-  bypass in direct_nav2 mode because the mission manager already owns task
-  lifecycle and command tracking
+- rmf_task_dispatcher: bypass in direct_nav2 mode because the mission manager already owns task lifecycle and command tracking
+- RMF lane traffic coordination and transfer mutexes: optional as defensive movement coordination, but not the authority for transfer ownership, package buffering, or blocked-task explanations
+- delivery, clean, compose UI/task variants beyond go_to_place: not needed for the current fixed package handoff workflow
+- doors, lifts, dispensers, ingestors, beacons, workcells:not needed unless the physical lab setup later adds those systems
+- Gazebo/RMF demo worlds: not needed for the physical TurtleBot3 deployment except as optional development or comparison tools
 
-RMF lane traffic coordination and transfer mutexes:
-  optional as defensive movement coordination, but not the authority for
-  transfer ownership, package buffering, or blocked-task explanations
-
-delivery, clean, compose UI/task variants beyond go_to_place:
-  not needed for the current fixed package handoff workflow
-
-doors, lifts, dispensers, ingestors, beacons, workcells:
-  not needed unless the physical lab setup later adds those systems
-
-Gazebo/RMF demo worlds:
-  not needed for the physical TurtleBot3 deployment except as optional
-  development or comparison tools
-```
 
 If RMF is reduced gradually, the likely steady state is:
 
