@@ -367,39 +367,27 @@ larger recovery behaviors
 
 ## 9. Add an execution backend switch for reduced RMF usage
 
-The current system uses RMF as the movement execution bridge between the
-mission layer and Nav2. When the mission layer emits a `MOVE_ROBOT` command,
-the ROS node publishes mission execution context and also submits an RMF task
-API request. RMF task dispatching accepts the request, the Free Fleet adapter
-receives a `go_to_place` command, the adapter sends a Nav2 `NavigateToPose`
-goal, and completion is reported back through RMF task summaries and the
-mission execution result channel.
+The current system uses RMF as the movement execution bridge between the mission layer and Nav2. When the mission layer emits a `MOVE_ROBOT` command: 
+  - the ROS node publishes mission execution context and also submits an RMF task API request. 
+  - RMF task dispatching accepts the request, 
+  - the Free Fleet adapter receives a `go_to_place` command, 
+  - the adapter sends a Nav2 `NavigateToPose` goal, 
+  - and completion is reported back through RMF task summaries and the mission execution result channel.
 
-This is useful because it keeps the system aligned with RMF task and fleet
-infrastructure. However, for the current TurtleBot3-only handoff workflow, RMF
-is not the source of truth for collaboration semantics. The mission layer
+This is useful because it keeps the system aligned with RMF task and fleet infrastructure. However, for the current TurtleBot3-only handoff workflow, RMF is not the source of truth for collaboration semantics. The mission layer
 already decides:
 
-```text
-which robot owns the transfer resource
-whether a package is available at transfer
-whether transfer has package capacity
-which robot should wait at the directional exit/wait point
-why a task is blocked
-what event will unblock it
-```
+* which robot owns the transfer resource
+* whether a package is available at transfer
+* whether transfer has package capacity
+* which robot should wait at the directional exit/wait point
+* why a task is blocked
+* what event will unblock it
 
-Those are mission-resource rules, not generic lane-traffic rules. RMF traffic
-scheduling can protect physical lane usage, but it does not naturally express
-handoff-specific states such as `PACKAGE_NOT_AVAILABLE`,
-`TRANSFER_PACKAGE_FULL`, or `WAITING_FOR_TRANSFER_LEASE`. For the intended use
-case, the explicit mission/resource logic should remain authoritative.
 
-The recommended future change is to add an execution backend switch:
+RMF traffic scheduling can protect physical lane usage, but it does not naturally express handoff-specific states such as `PACKAGE_NOT_AVAILABLE`, `TRANSFER_PACKAGE_FULL`, or `WAITING_FOR_TRANSFER_LEASE`. For the intended use case, the explicit mission/resource logic should remain authoritative.
 
-```text
-execution_backend = rmf | direct_nav2
-```
+The recommended future change is to add an execution backend switch: `execution_backend = rmf | direct_nav2`
 
 In `rmf` mode, the system keeps the current behavior:
 
@@ -427,11 +415,9 @@ MissionManager
   -> MissionManager.complete_command(...)
 ```
 
-The mission workflow should not change significantly between the two modes.
-The same mission tasks, resource leases, blocked states, and package state
-should be used. Only the command execution boundary changes.
+The mission workflow does not change significantly between the two modes. The same mission tasks, resource leases, blocked states, and package state should be used. Only the command execution boundary changes.
 
-For this project, the main differences are:
+The main differences are:
 
 ```text
 RMF backend:
@@ -443,14 +429,12 @@ direct_nav2 backend:
   mission_execution_results as the completion source
 ```
 
-The direct Nav2 backend would require a small waypoint-pose configuration in
-the Nav2 `map` frame. Nav2 can use the normal TurtleBot3 occupancy map directly;
-it does not need the RMF annotated building map for navigation. The RMF
-building map and nav graph can still be kept for fallback RMF execution,
-comparison experiments, or dashboard map display, but they should not be the
-navigation source of truth in direct Nav2 mode.
+The direct Nav2 backend would require a small waypoint-pose configuration in the Nav2 `map` frame. 
+Nav2 can use the normal TurtleBot3 occupancy map directly; it does not need the RMF annotated building map for navigation. 
 
-Implementation changes should be scoped:
+The RMF building map and nav graph can still be kept for fallback RMF execution, comparison experiments, or dashboard map display, but they should not be the navigation source of truth in direct Nav2 mode.
+
+Implementation changes:
 
 - add an `execution_backend` parameter to the mission manager node
 - keep the current RMF adapter path for `rmf` mode
@@ -460,16 +444,78 @@ Implementation changes should be scoped:
 - avoid relying on RMF `task_summaries` as the mission source of truth
 - keep mission-state publication stable for the dashboard
 
-The web UI should be treated as a mission operator interface rather than only a
-stock RMF dashboard. Reducing RMF task dispatching would make RMF task panels
-less meaningful unless equivalent custom task state is provided. Map display
-can still be supported through the RMF building map server or a custom map
-source. Robot fleet information can still come from Free Fleet/RMF while that
-adapter is retained, but if RMF traffic scheduling and Free Fleet are removed
-entirely, the project will need a custom robot-state API or websocket stream
-for the dashboard.
+RMF modules for the intended use case:
 
-A practical migration path is:
+```text
+building_map_server:
+  use for existing dashboard map display and RMF map compatibility
+
+Free Fleet / fleet state reporting:
+  use while the web UI still needs RMF-style robot fleet visibility
+
+rmf_traffic_schedule:
+  keep while the current Free Fleet adapter is retained, because the adapter
+  expects RMF schedule infrastructure; otherwise optional for this fixed
+  mission workflow
+
+RMF nav graph and annotated building map:
+  keep for RMF fallback mode, dashboard display, and comparison experiments;
+  do not use as the navigation source of truth in direct_nav2 mode
+
+RMF task API / task summaries:
+  use in rmf backend mode and for comparison; do not rely on them as the
+  mission completion source in direct_nav2 mode
+```
+
+RMF modules that are not central to the intended use case:
+
+```text
+rmf_task_dispatcher:
+  bypass in direct_nav2 mode because the mission manager already owns task
+  lifecycle and command tracking
+
+RMF lane traffic coordination and transfer mutexes:
+  optional as defensive movement coordination, but not the authority for
+  transfer ownership, package buffering, or blocked-task explanations
+
+delivery, clean, compose UI/task variants beyond go_to_place:
+  not needed for the current fixed package handoff workflow
+
+doors, lifts, dispensers, ingestors, beacons, workcells:
+  not needed unless the physical lab setup later adds those systems
+
+Gazebo/RMF demo worlds:
+  not needed for the physical TurtleBot3 deployment except as optional
+  development or comparison tools
+```
+
+If RMF is reduced gradually, the likely steady state is:
+
+```text
+Kept:
+  mission_manager
+  Nav2
+  operator dashboard
+  building map display
+  optional fleet-state bridge
+
+Bypassed or optional:
+  rmf_task_dispatcher
+  RMF task summaries as the mission completion source
+  RMF lane-level scheduling for transfer conflict ownership
+
+Removed only after replacement exists:
+  Free Fleet state reporting
+  rmf_traffic_schedule
+  RMF map/fleet API dependencies used by the web UI
+```
+
+Notes
+- Reducing RMF task dispatching would make RMF task panels less meaningful unless equivalent custom task state is provided. 
+- Map display can still be supported through the RMF building map server or a custom map source. 
+- Robot fleet information can still come from Free Fleet/RMF while that adapter is retained, but if RMF traffic scheduling and Free Fleet are removed entirely, the project will need a custom robot-state API or websocket stream for the dashboard.
+
+Migration path:
 
 ```text
 short term:
@@ -484,11 +530,6 @@ long term:
   decide whether RMF remains as map/fleet visualization infrastructure,
   comparison baseline, or is removed from the runtime entirely
 ```
-
-This creates a defensible comparison: full RMF-mediated execution versus a
-mission-specific Nav2 execution backend. It also avoids prematurely deleting
-RMF components before the direct execution path has been validated on the real
-robots.
 
 ---
 
