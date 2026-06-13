@@ -46,13 +46,9 @@ class MissionManagerNode(Node):
         self.declare_parameter("mission_id", "new-mission")
         self.declare_parameter("total_packages", 1)
         self.declare_parameter("auto_start", False)
-        self.declare_parameter("handling_arrival_tolerance_m", 0.15)
 
         mission_id = self.get_parameter("mission_id").value
         total_packages = self.get_parameter("total_packages").value
-        self.handling_arrival_tolerance_m = float(
-            self.get_parameter("handling_arrival_tolerance_m").value
-        )
 
         self.mission_manager = MissionManager.create_default(
             mission_id,
@@ -275,19 +271,13 @@ class MissionManagerNode(Node):
             self._publish_mission_state()
 
     def _accept_move_completion(self, command: ExecutionCommand, result: dict) -> bool:
-        distance = result.get("distance_to_target")
         source = result.get("source", "execution_result")
-        if not isinstance(distance, (int, float)):
-            self._reject_move_completion(command, source, "missing_distance_to_target")
+        if source not in ("nav2_result", "nav2_already_near_target"):
+            self._reject_move_completion(command, source, "unsupported_move_result_source")
             return False
 
-        if float(distance) > self.handling_arrival_tolerance_m:
-            self._reject_move_completion(
-                command,
-                source,
-                "outside_handling_arrival_tolerance",
-                float(distance),
-            )
+        if result.get("arrival_verified") is not True:
+            self._reject_move_completion(command, source, "arrival_not_verified", result)
             return False
 
         return True
@@ -297,7 +287,7 @@ class MissionManagerNode(Node):
         command: ExecutionCommand,
         source: str,
         reason: str,
-        distance: float | None = None,
+        result: dict | None = None,
     ) -> None:
         event = {
             "type": "MoveCompletionRejected",
@@ -306,10 +296,11 @@ class MissionManagerNode(Node):
             "target": command.target,
             "source": source,
             "reason": reason,
-            "arrival_tolerance_m": self.handling_arrival_tolerance_m,
         }
-        if distance is not None:
-            event["distance_to_target"] = distance
+        if result is not None:
+            event["distance_to_target"] = result.get("distance_to_target")
+            event["arrival_tolerance_m"] = result.get("arrival_tolerance_m")
+            event["arrival_verified"] = result.get("arrival_verified")
         self._record_event(event)
         self.get_logger().warning(
             f"Rejected move completion for {command.command_id}: {reason}"
