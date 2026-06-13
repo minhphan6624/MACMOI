@@ -46,9 +46,13 @@ class MissionManagerNode(Node):
         self.declare_parameter("mission_id", "new-mission")
         self.declare_parameter("total_packages", 1)
         self.declare_parameter("auto_start", False)
+        self.declare_parameter("handling_arrival_tolerance_m", 0.15)
 
         mission_id = self.get_parameter("mission_id").value
         total_packages = self.get_parameter("total_packages").value
+        self.handling_arrival_tolerance_m = float(
+            self.get_parameter("handling_arrival_tolerance_m").value
+        )
 
         self.mission_manager = MissionManager.create_default(
             mission_id,
@@ -152,9 +156,8 @@ class MissionManagerNode(Node):
         self._publish_mission_state()
 
     def _handle_task_summaries(self, msg) -> None:
-        """Complete mission commands from RMF task summary completion events."""
+        """Record RMF task completion without using it as physical arrival."""
 
-        commands = []
         task_states = getattr(msg, "tasks", [msg])
         for task_state in task_states:
             if task_state.state != task_state.STATE_COMPLETED:
@@ -162,14 +165,19 @@ class MissionManagerNode(Node):
             command_id = self.rmf_adapter.command_from_completed_task(task_state.task_id)
             if command_id is None:
                 continue
-            commands.extend(
-                self._complete_execution_command(
-                    command_id,
-                    "task_summary",
-                    task_state.task_id,
-                )
+            self._record_event(
+                {
+                    "type": "RmfTaskSummaryCompleted",
+                    "command_id": command_id,
+                    "rmf_task_id": task_state.task_id,
+                    "source": "task_summary",
+                    "message": (
+                        "RMF task summary completed; waiting for "
+                        "Nav2 arrival result before advancing mission"
+                    ),
+                }
             )
-        self._dispatch_commands(commands)
+        self._publish_mission_state()
 
     def _is_terminal_command(self, command: ExecutionCommand) -> bool:
         return command.status in (
@@ -241,6 +249,11 @@ class MissionManagerNode(Node):
 
         status = result.get("status")
         if status == "SUCCEEDED":
+            if command.command_type == ExecutionCommandType.MOVE_ROBOT:
+                if not self._accept_move_completion(command, result):
+                    self._publish_mission_state()
+                    return
+
             # Remove completed robot-side handling command from mission_debug_state.
             self.active_handling_commands = [
                 command
@@ -266,6 +279,47 @@ class MissionManagerNode(Node):
             ]
             self._record_event(result)
             self._publish_mission_state()
+
+    def _accept_move_completion(self, command: ExecutionCommand, result: dict) -> bool:
+        distance = result.get("distance_to_target")
+        source = result.get("source", "execution_result")
+        if not isinstance(distance, (int, float)):
+            self._reject_move_completion(command, source, "missing_distance_to_target")
+            return False
+
+        if float(distance) > self.handling_arrival_tolerance_m:
+            self._reject_move_completion(
+                command,
+                source,
+                "outside_handling_arrival_tolerance",
+                float(distance),
+            )
+            return False
+
+        return True
+
+    def _reject_move_completion(
+        self,
+        command: ExecutionCommand,
+        source: str,
+        reason: str,
+        distance: float | None = None,
+    ) -> None:
+        event = {
+            "type": "MoveCompletionRejected",
+            "command_id": command.command_id,
+            "robot_id": command.robot_id,
+            "target": command.target,
+            "source": source,
+            "reason": reason,
+            "arrival_tolerance_m": self.handling_arrival_tolerance_m,
+        }
+        if distance is not None:
+            event["distance_to_target"] = distance
+        self._record_event(event)
+        self.get_logger().warning(
+            f"Rejected move completion for {command.command_id}: {reason}"
+        )
 
     def _dispatch_commands(self, commands: list[ExecutionCommand]) -> None:
         """Send emitted mission commands to RMF or local handling simulation."""
