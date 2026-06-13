@@ -251,7 +251,7 @@ class MissionManagerNode(Node):
             self._record_action(command)
             if command.command_type == ExecutionCommandType.MOVE_ROBOT:
                 self._publish_execution_command(command)
-                self.rmf_adapter.submit_command(command, self.mission_manager.runtime.world)
+                self.rmf_adapter.submit_command(command)
                 self.mission_manager.execution_manager.mark_submitted(command.command_id)
             elif command.command_type == ExecutionCommandType.HANDLE_ITEM:
                 self._publish_execution_command(command)
@@ -274,7 +274,7 @@ class MissionManagerNode(Node):
         """Publish command context for external execution result producers."""
 
         msg = String()
-        
+
         payload = {
             "mission_id": self.mission_manager.runtime.mission_id,
             "command_id": command.command_id,

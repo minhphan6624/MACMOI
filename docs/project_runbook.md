@@ -224,7 +224,7 @@ MissionManagerNode
   -> TransportTaskScheduler
   -> TransportTaskRunner
   -> ExecutionManager
-  -> RmfExecutionAdapter / robot handling simulator
+  -> RmfAdapter / robot handling simulator
 ```
 
 The node publishes RMF movement requests for `MOVE_ROBOT` commands and publishes

@@ -66,7 +66,7 @@ MissionWorld:
 ResourceManager:
   transfer-zone access decisions
 
-RmfExecutionAdapter:
+RmfAdapter:
   RMF task API boundary
 ```
 
@@ -883,7 +883,7 @@ resource or robot state changed
 
 This should be treated as a moderate orchestration refactor, not a full
 architecture rewrite. `MissionWorld`, `ResourceManager`, `ExecutionManager`,
-`TransportTaskScheduler`, `TransportTaskBtRunner`, and `RmfExecutionAdapter`
+`TransportTaskScheduler`, `TransportTaskBtRunner`, and `RmfAdapter`
 can mostly remain in their current roles.
 
 ---

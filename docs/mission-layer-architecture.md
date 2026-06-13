@@ -38,7 +38,7 @@ MissionManagerNode
   -> TransportTaskScheduler
   -> TransportTaskBtRunner
   -> ExecutionManager
-  -> RmfExecutionAdapter / robot handling simulator
+  -> RmfAdapter / robot handling simulator
   -> execution completion
   -> MissionManager
 ```
@@ -67,7 +67,7 @@ ResourceManager:
 ExecutionManager:
   creates and tracks execution commands
 
-RmfExecutionAdapter:
+RmfAdapter:
   converts move commands into RMF task API requests
 ```
 
@@ -84,7 +84,7 @@ world.py                      robot/item/resource runtime state facade
 world_resource_manager.py     transfer access, lease, occupancy, buffer rules
 resources.py                  resource state model
 execution.py                  execution command lifecycle
-rmf_execution_adapter.py      RMF task API adapter for movement commands
+rmf_adapter.py                RMF task API adapter for movement commands
 mission_serializer.py         mission_state JSON serialization
 robot_bringup/handling_simulator_node.py
                              robot-side simulated load/unload confirmation
@@ -382,7 +382,7 @@ Command dispatch:
 ```text
 MOVE_ROBOT:
   publish mission_execution_commands context
-  RmfExecutionAdapter.submit_command(...)
+  RmfAdapter.submit_command(...)
   publish robot_task_request to task_api_requests
 
 HANDLE_ITEM:
@@ -390,7 +390,7 @@ HANDLE_ITEM:
   wait for robot-side handling result
 ```
 
-`RmfExecutionAdapter` converts movement commands into RMF
+`RmfAdapter` converts movement commands into RMF
 `robot_task_request` payloads. Movement is currently requested as a composed
 `go_to_place` task:
 
@@ -571,7 +571,7 @@ TransportTaskBtRunner:
 ResourceManager:
   queues, stronger lease arbitration, timeouts
 
-RmfExecutionAdapter:
+RmfAdapter:
   cancellation, failure handling, richer RMF task types
 
 MissionManagerNode:
