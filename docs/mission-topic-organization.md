@@ -281,6 +281,60 @@ for the frontend. The Mission tab still renders mock data when no mission ROS
 topics are available, then overlays live mission state/events when the API
 server receives them.
 
+The Mission tab should consume mission topics for mission semantics, not for
+spatial truth:
+
+```text
+mission_state should provide:
+  mission status and phase
+  package locations in mission terms: source, transfer, destination, carried_by
+  mission task status and dependencies
+  robot mission role/state: active mission task, logical location, waiting reason
+  transfer/resource state: occupied, buffered package, lease owner, blocked reason
+  next expected event/action
+
+mission_events should provide:
+  mission lifecycle events
+  task started/completed/blocked events
+  robot assigned/waiting/released mission events
+  resource acquired/released/blocked events
+  operator command events
+
+mission_debug_state should provide:
+  raw internals for developer inspection and rosbag replay
+```
+
+Do not put these RMF-owned fields into `mission_state` just to make a mission
+screen look like a map:
+
+```text
+exact robot x/y/yaw
+building map geometry
+traffic lanes and graph coordinates
+door/lift state
+robot battery and fleet heartbeat truth
+full RMF task summaries
+full robot trajectory/path geometry
+```
+
+Those should come from the existing RMF web streams and APIs. If the Mission
+tab needs a link or overlay on the real Map tab, the mission payload should
+reference stable semantic IDs that can be resolved by the map layer:
+
+```text
+robot_id / fleet robot name
+rmf_task_id
+map_name / level name when known
+waypoint name or place name, for example source, transfer, destination
+resource_id, for example transfer
+```
+
+The current `MissionFlowView` is therefore intentionally a mission-flow
+representation rather than a real map. It shows `Source -> Transfer ->
+Destination`, package queues, active legs, transfer status, and blockers. The
+real Open-RMF Map tab remains the authority for building geometry and robot
+pose.
+
 Debug tools:
 
 ```text
