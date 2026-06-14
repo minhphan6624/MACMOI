@@ -379,6 +379,19 @@ mission_events
 mission_execution_commands
 ```
 
+The web API server observes the mission-owned state topics and exposes them as:
+
+```text
+/missions/current/state
+/missions/current/debug_state
+/missions/current/events
+```
+
+The Mission tab consumes those Socket.IO streams and overlays live mission data
+onto fallback dashboard data. This lets the UI remain inspectable without live
+fleet telemetry, while still switching to real mission state when the ROS
+mission node is publishing.
+
 Command dispatch:
 
 ```text

@@ -249,10 +249,18 @@ Practical implementation order:
 4. Done: add `mission_events` publisher and emit events from `_record_event(...)`.
 5. Done: keep only `last_event` in `mission_state`; keep full debug context in debug state.
 6. Done: update README/runbook echo commands for the new split.
-7. Next: add API-server subscriptions and websocket rooms for state/events/debug.
-8. Next: replace mock dashboard data with an API-side mapper to the dashboard contract.
-9. Later: consider namespacing topics only after the web/API bridge and execution bridge are updated.
+7. Done: add API-server subscriptions and websocket rooms for state/events/debug.
+8. Done: replace mock-only dashboard data with a live mission-state overlay.
+9. Next: dry-test the ROS topic -> API server -> Socket.IO -> Mission tab path.
+10. Next: add mission command endpoints for start/pause/resume/abort.
+11. Later: consider namespacing topics only after the web/API bridge and execution bridge are validated.
 ```
+
+The web/API bridge currently keeps the dashboard usable without lab data. The
+Mission tab starts from mock scenario data, then overlays live `mission_state`
+and `mission_events` when they arrive through the API server. Fields that belong
+to RMF/fleet telemetry, such as battery level and exact map position, remain
+mock/fallback values until the RMF streams are available.
 
 ---
 
@@ -686,12 +694,13 @@ Build in this order:
 3. Expose mission lifecycle and state through the API server.
 4. Add live mission updates to the dashboard.
 5. Replace mock dashboard data with API-backed data.
-6. Add mission pause/resume/abort.
-7. Add task-level intervention controls.
-8. Add robot availability controls.
-9. Add run/artifact persistence.
-10. Add rosbag/log export workflows.
-11. Add higher-level recovery actions only after the basic intervention path is reliable.
+6. Dry-test the integrated observation path with manual ROS topic publications.
+7. Add mission pause/resume/abort API commands.
+8. Add task-level intervention controls.
+9. Add robot availability controls.
+10. Add run/artifact persistence.
+11. Add rosbag/log export workflows.
+12. Add higher-level recovery actions only after the basic intervention path is reliable.
 ```
 
 This order keeps the UI useful early while avoiding direct robot override before

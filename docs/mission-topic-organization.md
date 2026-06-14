@@ -267,12 +267,19 @@ Web UI and API:
 
 ```text
 consume:
-  mission_state
-  mission_events
+  mission_state -> API server /missions/current/state -> Mission tab overlay
+  mission_events -> API server /missions/current/events -> Mission event log
+  mission_debug_state -> API server /missions/current/debug_state -> developer inspection
 
 publish:
-  mission_commands
+  mission_commands (planned API command path)
 ```
+
+Current web integration uses the flat topic names for compatibility. The API
+server converts the JSON `std_msgs/msg/String` payloads into Socket.IO streams
+for the frontend. The Mission tab still renders mock data when no mission ROS
+topics are available, then overlays live mission state/events when the API
+server receives them.
 
 Debug tools:
 
