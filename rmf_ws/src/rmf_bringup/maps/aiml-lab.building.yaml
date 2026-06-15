@@ -20,26 +20,27 @@ levels:
       filename: aiml-lab.png
     elevation: 0
     lanes:
-      - [6, 3, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, ""], orientation: [1, ""], speed_limit: [3, 0]}]
-      - [2, 7, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, ""], orientation: [1, ""], speed_limit: [3, 0]}]
-      - [9, 1, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, transfer_zone], orientation: [1, ""], speed_limit: [3, 0]}]
-      - [1, 8, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, transfer_zone], orientation: [1, ""], speed_limit: [3, 0]}]
-      - [8, 3, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, ""], orientation: [1, ""], speed_limit: [3, 0]}]
-      - [9, 2, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, ""], orientation: [1, ""], speed_limit: [3, 0]}]
+      - [5, 2, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, ""], orientation: [1, ""], speed_limit: [3, 0]}]
+      - [1, 6, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, ""], orientation: [1, ""], speed_limit: [3, 0]}]
+      - [8, 0, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, transfer_zone], orientation: [1, ""], speed_limit: [3, 0]}]
+      - [0, 7, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, transfer_zone], orientation: [1, ""], speed_limit: [3, 0]}]
+      - [7, 2, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, ""], orientation: [1, ""], speed_limit: [3, 0]}]
+      - [8, 1, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 1], mutex: [1, ""], orientation: [1, ""], speed_limit: [3, 0]}]
+      - [6, 8, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 0], mutex: [1, ""], orientation: [1, ""], speed_limit: [3, 0]}]
+      - [7, 5, {bidirectional: [4, true], demo_mock_floor_name: [1, ""], demo_mock_lift_name: [1, ""], graph_idx: [2, 0], mutex: [1, ""], orientation: [1, ""], speed_limit: [3, 0]}]
     layers:
       {}
     measurements:
-      - [4, 5, {distance: [3, 1.1799999999999999]}]
+      - [3, 4, {distance: [3, 1.1799999999999999]}]
     vertices:
-      - [263.10500000000002, 91.135000000000005, 0, staging]
-      - [262.26100000000002, 117.84399999999999, 0, transfer]
-      - [200.55600000000001, 116.97, 0, destination]
-      - [316.79199999999997, 117.14400000000001, 0, source]
+      - [263.46899999999999, 99.212000000000003, 0, transfer]
+      - [188.405, 106.20399999999999, 0, destination]
+      - [327.05200000000002, 119.895, 0, source]
       - [277.29599999999999, 52.113999999999997, 0, ""]
       - [301.20299999999997, 52.533999999999999, 0, ""]
       - [315.19, 77.424000000000007, 0, robot1_home, {is_charger: [4, true]}]
       - [216.94499999999999, 75.188000000000002, 0, robot2_home, {is_charger: [4, true]}]
-      - [288.82100000000003, 101.807, 0, upstream_exit]
-      - [236.744, 100.626, 0, downstream_exit]
+      - [295.69799999999998, 107.45699999999999, 0, upstream_exit]
+      - [232.83099999999999, 102.446, 0, downstream_exit]
 lifts: {}
 name: aiml-lab-map1
