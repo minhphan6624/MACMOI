@@ -203,10 +203,11 @@ class MissionManagerNode(Node):
         command_id: str,
         error: str,
         source: str,
+        details: dict | None = None,
     ) -> list[ExecutionCommand]:
         """Record command failure and let mission logic retry or fail the task."""
 
-        event = ExecutionCommandFailed(command_id, error, source)
+        event = ExecutionCommandFailed(command_id, error, source, details)
         self._record_event(event)
         return self.mission_manager.handle_event(event)
 
@@ -257,17 +258,22 @@ class MissionManagerNode(Node):
 
         status = result.get("status")
         if status == "SUCCEEDED":
+
             if command.command_type == ExecutionCommandType.MOVE_ROBOT:
-                rejection_reason = self._move_completion_rejection_reason(command, result)
-                if rejection_reason is not None:
+                
+                # Get failure details if a move command is rejected
+                failure = self._move_completion_failure(command, result)
+                if failure is not None:
+                    error, details = failure
                     commands = self._process_execution_failed(
                         command_id,
-                        rejection_reason,
+                        error,
                         result.get("source", "execution_result"),
+                        details,
                     )
                     self._dispatch_after_execution_failure(
                         command_id,
-                        rejection_reason,
+                        error,
                         commands,
                     )
                     return
@@ -285,16 +291,16 @@ class MissionManagerNode(Node):
         if status in ("FAILED", "CANCELLED"):
             error = result.get("error") or status
             self._remove_active_handling_command(command_id)
-            self._record_event(result)
             commands = self._process_execution_failed(
                 command_id,
                 error,
                 result.get("source", "execution_result"),
+                self._execution_failure_details(command, result),
             )
             self._dispatch_after_execution_failure(command_id, error, commands)
 
     def _remove_active_handling_command(self, command_id: str) -> None:
-        """ Clean up active handling commands"""
+        """ Clean up active package handling commands"""
         self.active_handling_commands = [
             command
             for command in self.active_handling_commands
@@ -323,54 +329,47 @@ class MissionManagerNode(Node):
         
         self._publish_mission_state()
 
-    def _move_completion_rejection_reason(
-        self,
-        command: ExecutionCommand,
-        result: dict,
-    ) -> str | None:
-        """ Get reason if the move command is rejected"""
-        
+    def _move_completion_failure(self, command: ExecutionCommand, result: dict,) -> tuple[str, dict] | None:
+        """Return failure details if a reported move success should be rejected."""
+
         source = result.get("source", "execution_result")
-        
+        details = self._execution_failure_details(command, result)
+
         if source not in ("nav2_result", "nav2_already_near_target"):
-            self._reject_move_completion(
-                command, source,
-                "unsupported_move_result_source",
+            self.get_logger().warning(
+                f"Rejected move completion for {command.command_id}: "
+                "unsupported_move_result_source"
             )
-            return "unsupported_move_result_source"
+            return "unsupported_move_result_source", details
 
         if result.get("arrival_verified") is not True:
-            self._reject_move_completion(command, source, "arrival_not_verified", result)
-            return "arrival_not_verified"
+            self.get_logger().warning(
+                f"Rejected move completion for {command.command_id}: "
+                "arrival_not_verified"
+            )
+            return "arrival_not_verified", details
 
         return None
 
-    def _reject_move_completion(
+    def _execution_failure_details(
         self,
         command: ExecutionCommand,
-        source: str,
-        reason: str,
-        result: dict | None = None,
-    ) -> None:
-        
-        event = {
-            "type": "MoveCompletionRejected",
-            "command_id": command.command_id,
+        result: dict,
+    ) -> dict:
+        details = {
             "robot_id": command.robot_id,
             "target": command.target,
-            "source": source,
-            "reason": reason,
         }
-
-        if result is not None:
-            event["distance_to_target"] = result.get("distance_to_target")
-            event["arrival_tolerance_m"] = result.get("arrival_tolerance_m")
-            event["arrival_verified"] = result.get("arrival_verified")
-        
-        self._record_event(event)
-        self.get_logger().warning(
-            f"Rejected move completion for {command.command_id}: {reason}"
-        )
+        for key in (
+            "status",
+            "rmf_task_id",
+            "distance_to_target",
+            "arrival_tolerance_m",
+            "arrival_verified",
+        ):
+            if key in result:
+                details[key] = result.get(key)
+        return details
 
     def _dispatch_commands(self, commands: list[ExecutionCommand]) -> None:
         """Send emitted execution commands to RMF or local handling simulation."""

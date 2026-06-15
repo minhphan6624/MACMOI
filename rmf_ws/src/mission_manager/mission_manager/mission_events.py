@@ -24,3 +24,4 @@ class ExecutionCommandFailed:
     command_id: str
     error: str
     source: str
+    details: dict | None = None
