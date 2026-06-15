@@ -249,10 +249,148 @@ Practical implementation order:
 4. Done: add `mission_events` publisher and emit events from `_record_event(...)`.
 5. Done: keep only `last_event` in `mission_state`; keep full debug context in debug state.
 6. Done: update README/runbook echo commands for the new split.
-7. Next: add API-server subscriptions and websocket rooms for state/events/debug.
-8. Next: replace mock dashboard data with an API-side mapper to the dashboard contract.
-9. Later: consider namespacing topics only after the web/API bridge and execution bridge are updated.
+7. Done: add API-server subscriptions and websocket rooms for state/events/debug.
+8. Done: replace mock-only dashboard data with a live mission-state overlay.
+9. Done: replace the Mission tab's synthetic map panel with a mission-flow panel.
+10. Done: reorganize the Mission tab around mission overview, flow, steps, details, and activity.
+11. Next: dry-test the ROS topic -> API server -> Socket.IO -> Mission tab path.
+12. Next: add mission command endpoints for start/pause/resume/abort.
+13. Later: consider namespacing topics only after the web/API bridge and execution bridge are validated.
 ```
+
+The web/API bridge currently keeps the dashboard usable without lab data. The
+Mission tab starts from mock scenario data, then overlays live `mission_state`
+and `mission_events` when they arrive through the API server. Fields that belong
+to RMF/fleet telemetry, such as battery level and exact map position, remain
+mock/fallback values until the RMF streams are available.
+
+### 3.2. Implemented Web/API Bridge
+
+The first web-side integration work was implemented in the nested `web`
+repository on branch `mission-topic-payload-split`.
+
+Backend API server changes:
+
+```text
+web/packages/api-server/api_server/rmf_io/events.py
+  added MissionEvents subjects for mission_state, mission_debug_state, mission_events
+
+web/packages/api-server/api_server/gateway.py
+  subscribes to ROS String JSON topics:
+    mission_state
+    mission_debug_state
+    mission_events
+  parses JSON and forwards the payloads into MissionEvents
+
+web/packages/api-server/api_server/routes/missions.py
+  added:
+    GET /missions/current/state
+    GET /missions/current/debug_state
+    Socket.IO /missions/current/state
+    Socket.IO /missions/current/debug_state
+    Socket.IO /missions/current/events
+
+web/packages/api-server/api_server/app.py
+web/packages/api-server/api_server/routes/__init__.py
+web/packages/api-server/api_server/rmf_io/__init__.py
+  registered the mission routes and event dependencies
+```
+
+Frontend/API-client changes:
+
+```text
+web/packages/api-client/lib/index.ts
+  added generic mission payload types
+  added Socket.IO helpers:
+    subscribeMissionState
+    subscribeMissionDebugState
+    subscribeMissionEvents
+
+web/packages/rmf-dashboard-framework/src/services/rmf-api.ts
+  exposed frontend observables:
+    missionStateObs
+    missionDebugStateObs
+    missionEventsObs
+
+web/packages/rmf-dashboard-framework/src/utils/test-utils.test.tsx
+  updated mock RMF API service with mission observable subjects
+```
+
+Mission dashboard live overlay:
+
+```text
+web/packages/rmf-dashboard-framework/src/components/mission/live-dashboard-data.ts
+  maps raw compact mission_state into the existing dashboard data shape
+  keeps mock/fallback values for non-mission-owned telemetry such as battery and map position
+
+web/packages/rmf-dashboard-framework/src/components/mission/use-dashboard-data.ts
+  starts with demo scenario data
+  overlays live mission_state when received
+  appends mission_events into the event/activity stream
+```
+
+Verification performed at the time of implementation:
+
+```text
+python3 -m py_compile for changed API server files
+pnpm --dir packages/api-client exec tsc --noEmit
+eslint on changed frontend/API-client files
+vite build for packages/rmf-dashboard-framework/examples/demo
+```
+
+The full framework TypeScript check still had pre-existing Storybook typing
+issues unrelated to mission work.
+
+### 3.3. Implemented Mission Dashboard Layout Update
+
+The second web-side UI pass was implemented in the nested `web` repository on
+branch `mission-flow-dashboard-ui`.
+
+Changed mission UI files:
+
+```text
+web/packages/rmf-dashboard-framework/src/components/mission/mission-flow-view.tsx
+  new mission-specific flow panel
+  replaces the previous synthetic map in the Mission tab layout
+  shows Source -> Transfer -> Destination mission semantics
+  groups package chips by source, transfer, destination, and active legs
+  highlights active source-to-transfer and transfer-to-destination work
+  exposes an "Open RMF Map" action for spatial inspection
+
+web/packages/rmf-dashboard-framework/src/components/mission/activity-panel.tsx
+  new combined Activity panel
+  puts mission events and alerts behind Events / Alerts tabs
+  shows open-alert count and preserves alert select/acknowledge behavior
+
+web/packages/rmf-dashboard-framework/src/components/mission/mission-dashboard.tsx
+  reorganized the first viewport:
+    left: Mission Overview and Robots
+    center: Mission Flow and Mission Steps
+    right: Detail Panel and Activity
+
+web/packages/rmf-dashboard-framework/src/components/mission/fleet-panel.tsx
+  replaced the wide fleet table with compact mission-relevant robot cards
+  keeps robot selection, status, task, location, battery, and issue display
+
+web/packages/rmf-dashboard-framework/src/components/mission/mission-timeline.tsx
+  renamed visual intent from Mission Timeline to Mission Steps
+  groups package-like tasks by package ID when task IDs/labels contain P1, P2, etc.
+  caps panel height so details and activity remain visible
+
+web/packages/rmf-dashboard-framework/src/components/mission/top-bar.tsx
+  renamed Scenario to Demo Scenario to make mock-data usage explicit
+```
+
+Verification performed:
+
+```text
+eslint on changed mission UI files
+pnpm --dir packages/rmf-dashboard-framework exec tsc --noEmit --skipLibCheck
+vite build for packages/rmf-dashboard-framework/examples/demo
+```
+
+The Vite dev server hit the machine file watcher limit during verification, so
+the built demo was served with `vite preview` instead.
 
 ---
 
@@ -267,6 +405,152 @@ What are the robots currently doing?
 How far through the package batch are we?
 Can the operator intervene?
 ```
+
+The Mission tab should be the coordination surface for the operator. It should
+not be treated as a smaller copy of the RMF Map tab. The central split is:
+
+```text
+Mission tab:
+  operational intent, package flow, task ownership, blockers, next action
+
+Map tab:
+  physical location, building geometry, robot pose, traffic lanes, doors/lifts
+
+Robots tab:
+  fleet health, battery, mode, online/offline state, robot-specific diagnosis
+
+Tasks tab:
+  RMF task lifecycle, task details, cancellation/interruption controls
+```
+
+For the current two-robot handoff mission, the main Mission tab visual should
+focus on the mission semantics:
+
+```text
+Source / pickup queue
+  packages waiting at source
+  active package being moved by tb3_1
+
+Source-to-transfer leg
+  upstream robot
+  active source_to_transfer task
+  blocked/waiting state if transfer is unavailable
+
+Transfer zone
+  resource status
+  package buffer
+  robot occupancy
+  active lease/waiting reason when available
+
+Transfer-to-destination leg
+  downstream robot
+  active transfer_to_destination task
+  blocked/waiting state if package is unavailable
+
+Destination / dropoff queue
+  delivered packages
+  remaining packages
+```
+
+This is why the first UI refinement replaced the synthetic Mission-tab map with
+`MissionFlowView`. The old map-like panel was using mission dashboard positions
+as fake percentages. It looked spatial, but it was not the authoritative
+building map, robot pose, lane graph, or trajectory source. The Mission tab
+should not imply spatial truth unless it is rendering from the same RMF map and
+fleet streams as the real Map tab.
+
+The Mission Flow panel is not meant to be the final form. It is the first
+operator-facing representation of mission intent. As mission complexity grows,
+it should become more state-based and less step-list-based.
+
+Simple current form:
+
+```text
+Source -> Transfer -> Destination
+tb3_1 handles source -> transfer
+tb3_2 handles transfer -> destination
+```
+
+Better near-term form:
+
+```text
+Source
+  waiting: P2, P3
+  active pickup: P1
+
+tb3_1 source -> transfer
+  carrying or moving P1
+  current status / blocker
+
+Transfer
+  available or occupied
+  buffered package: P1 or none
+  waiting robot/package
+
+tb3_2 transfer -> destination
+  ready, moving, waiting, or blocked
+
+Destination
+  delivered: 0 / 3
+  next expected package
+```
+
+Larger mission form:
+
+```text
+Source A        Source B
+waiting: 4      waiting: 2
+active: P7      active: P11
+
+Upstream robots:
+  3 active
+  1 blocked
+
+Transfer / buffer resources:
+  queue: P2, P5, P8
+  blocked: P5 waiting 4m
+
+Downstream robots:
+  2 active
+  1 idle
+
+Destinations:
+  delivered: 13 / 20
+  late: 2
+```
+
+For non-linear missions, the flow can become a small mission graph:
+
+```text
+Pickup A -> Inspect -> Transfer -> Dropoff A
+Pickup B ----------^
+Pickup C -> Buffer -> Transfer -> Dropoff B
+```
+
+The important rule is to collapse normal things and expand abnormal things.
+This is partly a UI behavior rule and partly an information-priority rule.
+
+Normal state should be summarized:
+
+```text
+8 robots healthy
+12 packages on schedule
+3 resources available
+```
+
+Abnormal state should be expanded automatically:
+
+```text
+tb3_4 blocked near transfer
+P6 waiting 6m at transfer
+Dropoff B unavailable
+Operator confirmation required for P9 pickup
+```
+
+This can use expandable/collapsible UI components, but it should not depend
+only on manual expanders. The dashboard should visually prioritize active,
+waiting, blocked, failed, delayed, and operator-required states before normal
+background work.
 
 Use compact operational panels:
 
@@ -298,6 +582,61 @@ Event timeline:
   mission paused/resumed/aborted/completed
   recent RMF task request/response status
 ```
+
+Additional recommended Mission tab panels:
+
+```text
+Attention strip:
+  hidden when normal
+  shows top mission blockers, delayed packages, failed tasks, and operator-required actions
+
+Active work:
+  active package/task
+  responsible robot
+  current leg
+  next expected state transition
+
+Mission resources:
+  only mission-relevant robots and resources
+  transfer zone, staging/wait areas, package buffers
+
+Details/activity:
+  selected robot/task/zone/alert detail
+  mission-filtered events and alerts
+```
+
+The mission UI should make these questions answerable without scanning the full
+fleet:
+
+```text
+What is moving?
+What is waiting?
+What is blocked?
+Who owns the next action?
+Where should the operator click to inspect or intervene?
+```
+
+The Mission tab should link into the existing Open-RMF tabs instead of copying
+their full function:
+
+```text
+Click active robot:
+  open Robots tab or Map tab focused on that robot
+
+Click transfer zone:
+  open Map tab focused on the corresponding waypoint/place when available
+
+Click mission task:
+  open Tasks tab filtered or selected to the RMF/custom task
+
+Click alert:
+  keep mission context in the Mission tab and expose related robot/task/map links
+```
+
+This requires later shared selection/focus plumbing between tabs. The current
+`Open RMF Map` button is a first step; robot/zone/task-specific focus should be
+added after the mission state identifies RMF fleet names, robot names, RMF task
+IDs, and map waypoint/place IDs reliably.
 
 Initial controls:
 
@@ -686,12 +1025,13 @@ Build in this order:
 3. Expose mission lifecycle and state through the API server.
 4. Add live mission updates to the dashboard.
 5. Replace mock dashboard data with API-backed data.
-6. Add mission pause/resume/abort.
-7. Add task-level intervention controls.
-8. Add robot availability controls.
-9. Add run/artifact persistence.
-10. Add rosbag/log export workflows.
-11. Add higher-level recovery actions only after the basic intervention path is reliable.
+6. Dry-test the integrated observation path with manual ROS topic publications.
+7. Add mission pause/resume/abort API commands.
+8. Add task-level intervention controls.
+9. Add robot availability controls.
+10. Add run/artifact persistence.
+11. Add rosbag/log export workflows.
+12. Add higher-level recovery actions only after the basic intervention path is reliable.
 ```
 
 This order keeps the UI useful early while avoiding direct robot override before

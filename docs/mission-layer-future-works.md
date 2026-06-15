@@ -735,6 +735,50 @@ bad traffic behavior even when the mission-layer resource rules are correct.
 
 The operator interface should expose collaboration, not just robot motion.
 
+The Mission tab should be the coordination surface, while the existing RMF Map,
+Robots, and Tasks tabs remain drill-down surfaces:
+
+```text
+Mission tab:
+  what is moving, waiting, blocked, and next
+
+Map tab:
+  where robots and mission resources are physically located
+
+Robots tab:
+  fleet health, battery, online/offline status, robot diagnostics
+
+Tasks tab:
+  RMF task lifecycle and task-level interventions
+```
+
+The preferred Mission-tab primary visual is a mission-flow/control view, not a
+fake map. For the current handoff mission, this means:
+
+```text
+Source queue -> upstream robot leg -> transfer resource -> downstream robot leg -> destination queue
+```
+
+For larger missions, the flow view should aggregate normal state and expand
+abnormal state:
+
+```text
+normal summarized:
+  8 robots healthy
+  12 packages on schedule
+  transfer available
+
+abnormal expanded:
+  tb3_4 blocked near transfer
+  P6 waiting 6m at transfer
+  Dropoff B unavailable
+  operator confirmation needed for P9
+```
+
+This may use expandable/collapsible UI sections, but the principle is broader
+than a UI widget choice. Normal background work should not consume the same
+visual weight as blocked, waiting, failed, delayed, or operator-required work.
+
 The mission-state API should include:
 
 - active task dependencies

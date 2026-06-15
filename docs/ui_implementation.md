@@ -12,6 +12,91 @@ Implement the UI using mock data first. The frontend should be structured so tha
 
 Use clean component structure, typed data models, and readable code.
 
+# Current implementation status
+
+The initial mock Mission dashboard has been connected to the mission web/API
+bridge and then reorganized toward a flow-first operator interface.
+
+Implemented web/API integration:
+
+```text
+API server:
+  subscribes to mission_state, mission_debug_state, mission_events
+  exposes /missions/current/state
+  exposes /missions/current/debug_state
+  exposes Socket.IO rooms for state, debug_state, and events
+
+API client / dashboard framework:
+  exposes missionStateObs
+  exposes missionDebugStateObs
+  exposes missionEventsObs
+
+Mission dashboard:
+  starts from mock scenario data
+  overlays live mission_state when available
+  appends mission_events into the activity/event stream
+```
+
+Implemented UI reorganization:
+
+```text
+MissionFlowView:
+  replaces the synthetic MapView in the Mission tab's primary panel
+  shows Source -> Transfer -> Destination mission semantics
+  shows package chips, active legs, transfer status, blocker, and next step
+  links to the real Open-RMF Map tab for spatial inspection
+
+ActivityPanel:
+  combines Events and Alerts into a tabbed panel
+
+FleetPanel:
+  changed from a wide table to mission-relevant robot cards
+
+MissionTimeline:
+  renamed visually to Mission Steps
+  groups package-like steps by P1/P2/etc. when task IDs or labels include package IDs
+
+TopBar:
+  scenario selector is labelled Demo Scenario because it is a no-lab fallback tool
+```
+
+The current `MissionFlowView` is an intentionally simple first draft. It should
+be improved as the mission model grows, but it is the preferred direction over a
+fake mission-local map.
+
+# Updated product direction
+
+The Mission tab should be the operator's coordination surface. It should answer:
+
+```text
+What is moving?
+What is waiting?
+What is blocked?
+Who owns the next action?
+Where should the operator click to inspect or intervene?
+```
+
+The Mission tab should not duplicate the full Open-RMF Map tab. The split is:
+
+```text
+Mission tab:
+  mission intent, package flow, transfer/resource state, task ownership, blockers
+
+Map tab:
+  building map, robot pose, lanes, trajectories, doors/lifts, spatial inspection
+
+Robots tab:
+  fleet health, online/offline state, battery, robot diagnostics
+
+Tasks tab:
+  RMF task lifecycle and task-level controls
+```
+
+If a Mission-tab panel needs map context, it should link to or focus the real
+Map tab using robot IDs, task IDs, waypoint/place IDs, or resource IDs. The
+custom `mission_state` should not carry fake x/y map coordinates just to render
+a local map-like panel.
+
 # Core layout
 
 Create a dashboard layout with the following structure:
@@ -22,15 +107,15 @@ Main content area split into panels:
 * Left column:
 
   * Mission Overview
-  * Fleet Panel
-* Right/main column:
+  * Robots / mission-relevant fleet cards
+* Center/main column:
 
-  * Map View
-  * Mission Timeline
+  * Mission Flow
+  * Mission Steps
+* Right column:
+
   * Detail Panel
-    Bottom section:
-  * Alerts Panel
-  * Event Log
+  * Activity Panel with Events and Alerts tabs
 
 
 The layout should be usable on a standard laptop screen. Prioritize clarity over visual complexity.
@@ -379,14 +464,16 @@ Behavior:
 * If mission status is failed, show failed state prominently.
 * If mission status is completed, show completion state clearly.
 
-3. FleetPanel
+3. Robots / FleetPanel
 
 ---
 
 Purpose:
-Summarize every robot in the fleet.
+Summarize the mission-relevant robots first. For the current handoff mission,
+this is normally `tb3_1` and `tb3_2`. The full fleet-wide view should remain in
+the Open-RMF Robots tab.
 
-Display a table or card list with:
+Display compact robot cards with:
 
 * Robot ID or label
 * State
@@ -406,41 +493,84 @@ Behavior:
   * offline
   * low battery
 * Define low battery as battery below 25%.
-* Keep the table compact and readable.
+* Keep the cards compact and readable.
+* Do not make the Mission tab the full fleet-management table.
 
-4. MapView
+4. MissionFlowView
 
 ---
 
 Purpose:
-Show spatial information about robots, zones, and mission goals.
+Show mission semantics, not physical map truth.
 
-For the mock implementation, use a simple 2D schematic map, not a real map library unless the project already has one.
+For the current two-robot handoff mission, the flow should represent:
 
 Display:
 
-* A rectangular map area
-* Robot markers positioned using position.x and position.y as percentages
-* Zone markers for pickup, dropoff, transfer, and base zones
-* Labels for robot IDs and zones
-* Current active robot highlighted
-* Current goal highlighted
-* Transfer zone occupancy
-* Optional line from active robot to current goal
+* Source / pickup queue
+* Source-to-transfer leg
+* Transfer zone / buffer
+* Transfer-to-destination leg
+* Destination / dropoff queue
+* Packages at each mission stage
+* Active package/task/robot
+* Transfer availability, occupancy, buffered package, and waiting reason
+* Current blocker and next expected action
+* Link or button to open the real Open-RMF Map tab
 
 Behavior:
 
-* Clicking a robot marker selects the robot and updates DetailPanel.
-* Clicking a zone can select the zone and update DetailPanel.
-* Show occupied transfer zone distinctly.
-* Keep the map simple and legible.
+* Clicking a mission task selects it and updates DetailPanel.
+* Clicking a zone/resource selects it and updates DetailPanel.
+* Active work should be visually dominant.
+* Normal background state should be summarized.
+* Blocked, waiting, failed, delayed, or operator-required state should be expanded or visually prominent.
+* The panel should not imply real robot pose, real map coordinates, or RMF route geometry unless it is backed by RMF map/fleet data.
 
-5. MissionTimeline
+Near-term target:
+
+```text
+Source
+  waiting: P2, P3
+  active pickup: P1
+
+tb3_1 source -> transfer
+  active, waiting, blocked, or completed
+
+Transfer
+  available / occupied / blocked
+  buffer: P1 or none
+
+tb3_2 transfer -> destination
+  active, waiting, blocked, or completed
+
+Destination
+  delivered: 0 / 3
+```
+
+Larger-mission target:
+
+```text
+Source A        Source B
+waiting: 4      waiting: 2
+active: P7      active: P11
+
+Transfer resources
+queue: P2, P5, P8
+blocked: P5 waiting 4m
+
+Destinations
+delivered: 13 / 20
+late: 2
+```
+
+5. MissionSteps / MissionTimeline
 
 ---
 
 Purpose:
-Show the mission as a sequence of dependent steps.
+Show the mission as dependent work, grouped by package or mission stage when
+possible.
 
 Display each task/step with:
 
@@ -456,9 +586,11 @@ Behavior:
 
 * The active task should be visually prominent.
 * Completed tasks should appear complete.
-* Pending tasks should appear inactive but visible.
+* Pending tasks should be visible but should not dominate the page when there are many of them.
 * Failed or waiting tasks should be easy to detect.
 * Clicking a task selects it and updates DetailPanel.
+* Package-like tasks should be grouped by package ID, for example P1, P2, P3.
+* Future versions should allow completed/normal work to collapse while blocked or waiting work remains expanded.
 
 6. DetailPanel
 
@@ -536,14 +668,20 @@ Behavior:
 * Detail action buttons can initially log to console and append mock operator events.
 * Acknowledge alert should update the mock alert state.
 
-7. AlertsPanel
+7. ActivityPanel / Alerts
 
 ---
 
 Purpose:
-Show issues requiring operator attention.
+Show recent mission activity and issues requiring operator attention.
 
-Display:
+Display Events tab:
+
+* Timestamp
+* Event type
+* Message
+
+Display Alerts tab:
 
 * Alert severity
 * Source
@@ -555,6 +693,7 @@ Display:
 
 Behavior:
 
+* Events and alerts can share one Activity panel to save first-viewport space.
 * Critical alerts appear first, then warning, then info.
 * Unacknowledged alerts appear before acknowledged alerts.
 * Clicking an alert selects it and updates DetailPanel.
@@ -565,7 +704,8 @@ Behavior:
 ---
 
 Purpose:
-Show recent mission, robot, task, alert, operator, and system events.
+Show recent mission, robot, task, alert, operator, and system events. This is
+currently folded into ActivityPanel on the Mission tab.
 
 Display:
 
@@ -649,11 +789,10 @@ components/
 TopBar.tsx
 MissionOverview.tsx
 FleetPanel.tsx
-MapView.tsx
-MissionTimeline.tsx
+MissionFlowView.tsx
+MissionSteps.tsx
 DetailPanel.tsx
-AlertsPanel.tsx
-EventLog.tsx
+ActivityPanel.tsx
 ScenarioSwitcher.tsx
 data/
 mockDashboardData.ts
@@ -701,15 +840,18 @@ The implementation is complete when:
 2. The TopBar shows mission and system state.
 3. MissionOverview clearly shows mission phase, progress, active robot, blocker, and next step.
 4. FleetPanel lists all robots and supports robot selection.
-5. MapView shows robot markers, mission zones, transfer zone occupancy, and active robot.
-6. MissionTimeline shows ordered mission steps and supports task selection.
+5. MissionFlowView shows source, transfer, destination, active legs, package stage, transfer status, blocker, and next action.
+6. MissionSteps shows ordered or grouped mission steps and supports task selection.
 7. DetailPanel changes based on selected robot, task, zone, or alert.
-8. AlertsPanel prioritizes alerts and supports acknowledge/select actions.
-9. EventLog shows timestamped events and updates when mock actions are triggered.
+8. ActivityPanel prioritizes alerts and supports acknowledge/select actions.
+9. ActivityPanel/EventLog shows timestamped events and updates when mock actions are triggered.
 10. ScenarioSwitcher allows testing normal operation, transfer-zone conflict, low-battery risk, and robot failure.
 11. The code uses clear TypeScript interfaces.
 12. Mock data is centralized and easy to replace with live backend data.
 13. Visual components are separated from mission logic and data loading.
 14. The UI is readable and usable on a laptop screen.
 
-Do not implement ROS 2, RMF, or backend API logic yet. Build the frontend dashboard with mock data and a clean data contract so that it can later connect to the mission layer.
+The first version used mock data. The current branch has begun the live
+connection through the API server and mission topics. Continue to keep visual
+components separate from business logic and data loading so the UI can evolve
+without rewriting the mission manager.

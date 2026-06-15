@@ -343,6 +343,59 @@ ros2 topic echo --full-length /mission_debug_state std_msgs/msg/String \
   --field data | python3 -m json.tool
 ```
 
+To verify the web bridge without live robots, run the API server and dashboard,
+then publish a small mission state manually:
+
+```bash
+cd web
+pnpm --filter api-server start
+```
+
+```bash
+cd web/packages/rmf-dashboard-framework
+pnpm exec vite --host 127.0.0.1 --port 5173 examples/demo -c examples/shared/vite.config.ts
+```
+
+Open the Mission tab at `http://127.0.0.1:5173/mission`. Without mission ROS
+topics, it shows fallback scenario data. Publish a sample state to verify the
+live overlay path:
+
+```bash
+ros2 topic pub --once /mission_state std_msgs/msg/String "{data: '{\"schema_version\":1,\"mission\":{\"id\":\"dry_run\",\"name\":\"Dry Run Mission\",\"status\":\"active\",\"phase\":\"moving_to_pickup\",\"current_step\":1,\"total_steps\":4,\"active_robot\":\"tb3_1\",\"current_blocker\":null,\"next_step\":\"load\",\"last_update\":1710000000},\"packages\":{},\"robots\":[],\"tasks\":[],\"zones\":[],\"operator\":{\"active_command_count\":0,\"blocked_task_count\":0},\"last_event\":null,\"last_update_time\":1710000000}'}"
+```
+
+Current Mission tab UI direction:
+
+```text
+Mission tab:
+  mission overview
+  mission-relevant robot cards
+  Mission Flow panel for Source -> Transfer -> Destination semantics
+  grouped Mission Steps
+  selected Detail Panel
+  Activity panel with Events and Alerts tabs
+
+Map tab:
+  real Open-RMF map, robot pose, lanes, doors/lifts, and spatial inspection
+```
+
+The Mission Flow panel is not a real map. It is a mission coordination view. Use
+the `Open RMF Map` action when the operator needs physical robot/map context.
+
+If the local Vite dev server fails with a file watcher error such as:
+
+```text
+ENOSPC: System limit for number of file watchers reached
+```
+
+build and preview the demo instead:
+
+```bash
+cd /home/minhqphan/projects/MACMOI/web/packages/rmf-dashboard-framework
+pnpm exec vite build examples/demo -c examples/shared/vite.config.ts
+pnpm exec vite preview --host 127.0.0.1 --port 5173 --outDir examples/demo/dist
+```
+
 Useful execution-completion logs:
 
 ```text

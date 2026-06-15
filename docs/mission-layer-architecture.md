@@ -379,6 +379,84 @@ mission_events
 mission_execution_commands
 ```
 
+The web API server observes the mission-owned state topics and exposes them as:
+
+```text
+/missions/current/state
+/missions/current/debug_state
+/missions/current/events
+```
+
+The Mission tab consumes those Socket.IO streams and overlays live mission data
+onto fallback dashboard data. This lets the UI remain inspectable without live
+fleet telemetry, while still switching to real mission state when the ROS
+mission node is publishing.
+
+The web dashboard is an observer and operator-command surface, not a second
+mission runtime. The current intended ownership split is:
+
+```text
+Mission manager:
+  mission lifecycle
+  task dependencies
+  package ownership
+  transfer-zone resource state
+  waiting/blocking reasons
+  operator command acceptance
+
+API server:
+  subscribe to mission ROS topics
+  expose mission state/events/debug over REST and Socket.IO
+  later publish validated mission_commands
+  avoid deriving independent mission truth
+
+Mission tab:
+  show operator-facing mission coordination
+  show source/transfer/destination package flow
+  show active work, blockers, mission resources, events, and alerts
+  link to RMF tabs for spatial/fleet/task drill-down
+
+RMF Map tab:
+  authoritative building map
+  robot pose, level, lanes, doors/lifts, and spatial inspection
+
+Robots/Tasks tabs:
+  fleet health and RMF task lifecycle details
+```
+
+The Mission tab should not duplicate the full RMF map from mission-owned data.
+The previous mock UI used a synthetic map-like grid with percentage positions
+from the mission dashboard model. That was useful for early visualization but
+could imply false spatial accuracy. The current direction is to use a
+mission-flow panel as the primary Mission-tab visual and link into the real RMF
+Map tab when the operator needs physical inspection.
+
+The initial implemented flow panel is:
+
+```text
+Source -> Source-to-transfer leg -> Transfer -> Transfer-to-destination leg -> Destination
+```
+
+It displays package chips, active robot/task ownership, transfer availability,
+and the current blocker/next step. Future versions should aggregate normal
+state and expand abnormal state, for example:
+
+```text
+normal:
+  8 robots healthy
+  12 packages on schedule
+  transfer available
+
+abnormal:
+  tb3_4 blocked near transfer
+  P6 waiting 6m at transfer
+  operator confirmation required
+```
+
+This keeps the UI aligned with the mission layer's role: explain collaboration,
+resource contention, and recovery needs rather than merely showing where robots
+are on a map.
+
 Command dispatch:
 
 ```text
