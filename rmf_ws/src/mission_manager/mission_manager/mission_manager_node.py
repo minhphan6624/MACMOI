@@ -252,24 +252,8 @@ class MissionManagerNode(Node):
 
         status = result.get("status")
         if status == "SUCCEEDED":
-
-            # Move commands
             if command.command_type == ExecutionCommandType.MOVE_ROBOT:
-                
-                # Check to see if the move command is rejected
-                rejection_reason = None
-                source = result.get("source", "execution_result")
-
-                if source not in ("nav2_result", "nav2_already_near_target"):
-                    self._reject_move_completion(command, source, "unsupported_move_result_source")
-                    rejection_reason = "unsupported_move_result_source"
-
-                if result.get("arrival_verified") is not True:
-                    self._reject_move_completion(command, source, "arrival_not_verified", result)
-                    rejection_reason =  "arrival_not_verified"
-                
-                # rejection_reason = self._move_completion_rejection_reason(command, result)
-                
+                rejection_reason = self._move_completion_rejection_reason(command, result)
                 if rejection_reason is not None:
                     commands = self._fail_execution_command(
                         command_id,
@@ -332,21 +316,21 @@ class MissionManagerNode(Node):
         
         self._publish_mission_state()
 
-    # def _move_completion_rejection_reason(
-    #     self,
-    #     command: ExecutionCommand,
-    #     result: dict,
-    # ) -> str | None:
-    #     source = result.get("source", "execution_result")
-    #     if source not in ("nav2_result", "nav2_already_near_target"):
-    #         self._reject_move_completion(command, source, "unsupported_move_result_source")
-    #         return "unsupported_move_result_source"
+    def _move_completion_rejection_reason(
+        self,
+        command: ExecutionCommand,
+        result: dict,
+    ) -> str | None:
+        source = result.get("source", "execution_result")
+        if source not in ("nav2_result", "nav2_already_near_target"):
+            self._reject_move_completion(command, source, "unsupported_move_result_source")
+            return "unsupported_move_result_source"
 
-    #     if result.get("arrival_verified") is not True:
-    #         self._reject_move_completion(command, source, "arrival_not_verified", result)
-    #         return "arrival_not_verified"
+        if result.get("arrival_verified") is not True:
+            self._reject_move_completion(command, source, "arrival_not_verified", result)
+            return "arrival_not_verified"
 
-    #     return None
+        return None
 
     def _reject_move_completion(
         self,

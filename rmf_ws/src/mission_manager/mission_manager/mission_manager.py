@@ -65,12 +65,30 @@ class MissionManager:
         """Apply a mission event and return newly emitted execution commands."""
 
         if isinstance(event, MissionStartRequested):
-            return self.start()
+            return self._handle_start_requested(event)
         if isinstance(event, ExecutionCommandCompleted):
-            return self.complete_command(event.command_id)
+            return self._handle_command_completed(event)
         if isinstance(event, ExecutionCommandFailed):
-            return self.fail_command(event.command_id, event.error)
+            return self._handle_command_failed(event)
         return []
+
+    def _handle_start_requested(
+        self,
+        event: MissionStartRequested,
+    ) -> list[ExecutionCommand]:
+        return self.start()
+
+    def _handle_command_completed(
+        self,
+        event: ExecutionCommandCompleted,
+    ) -> list[ExecutionCommand]:
+        return self.complete_command(event.command_id)
+
+    def _handle_command_failed(
+        self,
+        event: ExecutionCommandFailed,
+    ) -> list[ExecutionCommand]:
+        return self.fail_command(event.command_id, event.error)
 
     @classmethod
     def create_default(
