@@ -1,0 +1,30 @@
+{
+  // Central-PC bridge for mission execution topics.
+  // This relays mission_execution_commands to the robot side and
+  // mission_execution_results back to the central ROS 2 graph.
+  plugins: {
+    ros2dds: {
+      allow: {
+        publishers: [
+          ".*/mission_execution_commands", 
+          ".*/mission_execution_results"
+          ],
+        subscribers: [
+          ".*/mission_execution_commands", 
+          ".*/mission_execution_results"
+          ],
+        service_servers: [],
+        service_clients: [],
+        action_servers: [],
+        action_clients: [],
+      },
+    },
+  },
+  mode: "client",
+  connect: {
+    endpoints: []
+  },
+  listen: {
+    endpoints: []
+  },
+}
