@@ -35,7 +35,7 @@ TASK_SUMMARIES_TOPIC = "task_summaries"
 MISSION_STATE_TOPIC = "mission_state"
 MISSION_DEBUG_STATE_TOPIC = "mission_debug_state"
 MISSION_EVENTS_TOPIC = "mission_events"
-MISSION_COMMANDS_TOPIC = "mission_commands"
+OPERATOR_COMMANDS_TOPIC = "mission_commands"
 MISSION_EXECUTION_COMMANDS_TOPIC = "mission_execution_commands"
 MISSION_EXECUTION_RESULTS_TOPIC = "mission_execution_results"
 
@@ -107,8 +107,12 @@ class MissionManagerNode(Node):
             events_qos,
         )
 
-        # ==== Subscriptions
-        self.create_subscription(String,MISSION_COMMANDS_TOPIC, self._handle_mission_command, 10)
+        self.create_subscription(
+            String,
+            OPERATOR_COMMANDS_TOPIC,
+            self._handle_operator_command,
+            10,
+        )
         self.execution_command_pub = self.create_publisher(
             String,
             MISSION_EXECUTION_COMMANDS_TOPIC,
@@ -140,22 +144,23 @@ class MissionManagerNode(Node):
         else:
             self._publish_mission_state()
 
+    # RMF API handlers
     def _publish_api_request(self, request_id: str, payload: str) -> None:
         msg = ApiRequest()
         msg.request_id = request_id
         msg.json_msg = payload
         self.api_request_pub.publish(msg)
-        self.get_logger().info(f"Published mission command request {request_id}")
+        self.get_logger().info(f"Published RMF task request {request_id}")
 
     def _handle_api_response(self, msg: ApiResponse) -> None:
         command_id = self.rmf_adapter.handle_api_response(msg)
         if command_id is not None:
             self.mission_manager.execution_manager.mark_running(command_id)
-            self.get_logger().info(f"Mission command accepted: {command_id}")
+            self.get_logger().info(f"Execution command accepted: {command_id}")
         self._publish_mission_state()
 
     def _handle_task_summaries(self, msg) -> None:
-        """Record RMF task completion without using it as physical arrival."""
+        """Record RMF task completion."""
 
         task_states = getattr(msg, "tasks", [msg])
         for task_state in task_states:
@@ -178,7 +183,7 @@ class MissionManagerNode(Node):
             )
         self._publish_mission_state()
 
-    def _complete_execution_command(
+    def _process_execution_completed(
         self,
         command_id: str,
         source: str,
@@ -189,11 +194,11 @@ class MissionManagerNode(Node):
         event = ExecutionCommandCompleted(command_id, source, rmf_task_id)
         self._record_event(event)
         self.get_logger().info(
-            f"Mission command completed from {source}: {command_id}"
+            f"Execution command completed from {source}: {command_id}"
         )
         return self.mission_manager.handle_event(event)
 
-    def _fail_execution_command(
+    def _process_execution_failed(
         self,
         command_id: str,
         error: str,
@@ -205,13 +210,13 @@ class MissionManagerNode(Node):
         self._record_event(event)
         return self.mission_manager.handle_event(event)
 
-    def _handle_mission_command(self, msg: String) -> None:
-        """Handle operator mission commands from the mission command topic."""
+    def _handle_operator_command(self, msg: String) -> None:
+        """Handle operator commands from the mission command topic."""
 
         try:
             command = json.loads(msg.data)
         except json.JSONDecodeError:
-            self.get_logger().warning(f"Invalid mission command JSON: {msg.data}")
+            self.get_logger().warning(f"Invalid operator command JSON: {msg.data}")
             return
 
         if command.get("mission_id") != self.mission_manager.runtime.mission_id:
@@ -223,7 +228,7 @@ class MissionManagerNode(Node):
             self._dispatch_commands(self.mission_manager.handle_event(event))
             return
 
-        self.get_logger().warning(f"Unsupported mission command: {command}")
+        self.get_logger().warning(f"Unsupported operator command: {command}")
 
     def _handle_execution_result(self, msg: String) -> None:
         """Handle direct execution results from the Free Fleet/Nav2 side channel."""
@@ -255,23 +260,22 @@ class MissionManagerNode(Node):
             if command.command_type == ExecutionCommandType.MOVE_ROBOT:
                 rejection_reason = self._move_completion_rejection_reason(command, result)
                 if rejection_reason is not None:
-                    commands = self._fail_execution_command(
+                    commands = self._process_execution_failed(
                         command_id,
                         rejection_reason,
                         result.get("source", "execution_result"),
                     )
-                    self._dispatch_failure_commands(command_id, rejection_reason, commands)
+                    self._dispatch_after_execution_failure(
+                        command_id,
+                        rejection_reason,
+                        commands,
+                    )
                     return
 
-            # Remove completed robot-side handling command from mission_debug_state.
-            self.active_handling_commands = [
-                command
-                for command in self.active_handling_commands
-                if command.get("command_id") != command_id
-            ]
+            self._remove_active_handling_command(command_id)
 
-            commands = self._complete_execution_command(
-                command_id, 
+            commands = self._process_execution_completed(
+                command_id,
                 result.get("source", "execution_result"),
                 result.get("rmf_task_id"),
             )
@@ -280,21 +284,24 @@ class MissionManagerNode(Node):
 
         if status in ("FAILED", "CANCELLED"):
             error = result.get("error") or status
-            # Remove failed/cancelled robot-side handling command from mission_debug_state.
-            self.active_handling_commands = [
-                command
-                for command in self.active_handling_commands
-                if command.get("command_id") != command_id
-            ]
+            self._remove_active_handling_command(command_id)
             self._record_event(result)
-            commands = self._fail_execution_command(
+            commands = self._process_execution_failed(
                 command_id,
                 error,
                 result.get("source", "execution_result"),
             )
-            self._dispatch_failure_commands(command_id, error, commands)
+            self._dispatch_after_execution_failure(command_id, error, commands)
 
-    def _dispatch_failure_commands(
+    def _remove_active_handling_command(self, command_id: str) -> None:
+        """ Clean up active handling commands"""
+        self.active_handling_commands = [
+            command
+            for command in self.active_handling_commands
+            if command.get("command_id") != command_id
+        ]
+
+    def _dispatch_after_execution_failure(
         self,
         failed_command_id: str,
         reason: str,
@@ -321,9 +328,15 @@ class MissionManagerNode(Node):
         command: ExecutionCommand,
         result: dict,
     ) -> str | None:
+        """ Get reason if the move command is rejected"""
+        
         source = result.get("source", "execution_result")
+        
         if source not in ("nav2_result", "nav2_already_near_target"):
-            self._reject_move_completion(command, source, "unsupported_move_result_source")
+            self._reject_move_completion(
+                command, source,
+                "unsupported_move_result_source",
+            )
             return "unsupported_move_result_source"
 
         if result.get("arrival_verified") is not True:
@@ -339,6 +352,7 @@ class MissionManagerNode(Node):
         reason: str,
         result: dict | None = None,
     ) -> None:
+        
         event = {
             "type": "MoveCompletionRejected",
             "command_id": command.command_id,
@@ -347,23 +361,24 @@ class MissionManagerNode(Node):
             "source": source,
             "reason": reason,
         }
+
         if result is not None:
             event["distance_to_target"] = result.get("distance_to_target")
             event["arrival_tolerance_m"] = result.get("arrival_tolerance_m")
             event["arrival_verified"] = result.get("arrival_verified")
+        
         self._record_event(event)
         self.get_logger().warning(
             f"Rejected move completion for {command.command_id}: {reason}"
         )
 
     def _dispatch_commands(self, commands: list[ExecutionCommand]) -> None:
-        """Send emitted mission commands to RMF or local handling simulation."""
+        """Send emitted execution commands to RMF or local handling simulation."""
 
         for command in commands:
             self._record_action(command)
-            
+
             if command.command_type == ExecutionCommandType.MOVE_ROBOT:
-                
                 self._publish_execution_command(command)
                 self.rmf_adapter.submit_command(command)
                 self.mission_manager.execution_manager.mark_submitted(command.command_id)
@@ -371,6 +386,7 @@ class MissionManagerNode(Node):
             elif command.command_type == ExecutionCommandType.HANDLE_ITEM:
                 self._publish_execution_command(command)
                 # Expose the outstanding robot-side handling command in mission_debug_state.
+                
                 self.active_handling_commands.append(
                     {
                         "command_id": command.command_id,
@@ -379,12 +395,13 @@ class MissionManagerNode(Node):
                         "handling_type": command.handling_type,
                     }
                 )
+
                 self.mission_manager.execution_manager.mark_submitted(command.command_id)
                 self.mission_manager.execution_manager.mark_running(command.command_id)
-            
+
             else:
                 self.get_logger().warning(f"Unsupported execution command: {command}")
-        
+
         self._publish_mission_state()
 
     # ----- Topic publishing helpers -----
