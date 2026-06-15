@@ -260,7 +260,6 @@ class MissionManagerNode(Node):
 
         if status in ("FAILED", "CANCELLED"):
             error = result.get("error") or status
-            self.mission_manager.execution_manager.mark_failed(command_id, error)
             # Remove failed/cancelled robot-side handling command from mission_debug_state.
             self.active_handling_commands = [
                 command
@@ -268,6 +267,20 @@ class MissionManagerNode(Node):
                 if command.get("command_id") != command_id
             ]
             self._record_event(result)
+            commands = self.mission_manager.fail_command(command_id, error)
+            if commands:
+                self._record_event(
+                    {
+                        "type": "ExecutionCommandRetry",
+                        "failed_command_id": command_id,
+                        "retry_command_ids": [
+                            command.command_id for command in commands
+                        ],
+                        "reason": error,
+                    }
+                )
+                self._dispatch_commands(commands)
+                return
             self._publish_mission_state()
 
     def _accept_move_completion(self, command: ExecutionCommand, result: dict) -> bool:

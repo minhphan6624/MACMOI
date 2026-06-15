@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from enum import Enum
 
-from .execution import ExecutionCommand, ExecutionManager
+from .execution import ExecutionCommand, ExecutionCommandType, ExecutionManager
 from .mission_definition import (
     DESTINATION_WAYPOINT,
     DOWNSTREAM_WAIT_WAYPOINT,
@@ -48,11 +48,13 @@ class MissionManager:
         runtime: MissionRuntime,
         scheduler: TransportTaskScheduler | None = None,
         execution_manager: ExecutionManager | None = None,
+        max_arrival_retries: int = 2,
     ):
         self.runtime = runtime
         self.scheduler = scheduler or TransportTaskScheduler()
         self.execution_manager = execution_manager or ExecutionManager()
         self.task_runner = TransportTaskBtRunner(runtime.world, self.execution_manager)
+        self.max_arrival_retries = max_arrival_retries
 
     @classmethod
     def create_default(
@@ -190,5 +192,54 @@ class MissionManager:
             return [*commands, *self.task_runner.start(task)]
         
         return self.tick()
+
+    def fail_command(self, command_id: str, error: str) -> list[ExecutionCommand]:
+        """Apply execution failure and retry recoverable move arrivals."""
+
+        # Validations
+        if command_id not in self.execution_manager.commands:
+            return []
+
+        command = self.execution_manager.commands[command_id]
+        if not self.execution_manager.mark_failed(command_id, error):
+            return []
+
+        task = self.runtime.tasks.get(command.task_id)
+        if task is None:
+            return []
+
+        if task.active_command_id != command_id:
+            return []
+
+
+        task.active_command_id = None
+        if (
+            error == "arrival_not_verified"
+            and command.command_type == ExecutionCommandType.MOVE_ROBOT
+            and command.target is not None
+        ):
+            retry_key = f"arrival_retry:{command.target}"
+            retries = int(task.bt_blackboard.get(retry_key, 0))
+
+            # Try sending MOVE_ROBOT commands to the same goal twice
+            if retries < self.max_arrival_retries:
+                task.bt_blackboard[retry_key] = retries + 1
+                task.status = MissionTaskStatus.RUNNING
+                
+                retry = self.execution_manager.create_move(
+                    command.task_id,
+                    command.robot_id,
+                    command.target,
+                )
+                
+                task.active_command_id = retry.command_id
+                return [retry]
+
+        # If task still fails after 2 retries, mark as failed
+        task.status = MissionTaskStatus.FAILED
+        task.blocked_reason = error
+        task.blocked_by = command.robot_id
+        task.next_expected_event = "operator intervention"
+        return []
     
         
