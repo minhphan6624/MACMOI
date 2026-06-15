@@ -2,6 +2,11 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .execution import ExecutionCommand, ExecutionCommandType, ExecutionManager
+from .mission_events import (
+    ExecutionCommandCompleted,
+    ExecutionCommandFailed,
+    MissionStartRequested,
+)
 from .mission_definition import (
     DESTINATION_WAYPOINT,
     DOWNSTREAM_WAIT_WAYPOINT,
@@ -55,6 +60,17 @@ class MissionManager:
         self.execution_manager = execution_manager or ExecutionManager()
         self.task_runner = TransportTaskBtRunner(runtime.world, self.execution_manager)
         self.max_arrival_retries = max_arrival_retries
+
+    def handle_event(self, event) -> list[ExecutionCommand]:
+        """Apply a mission event and return newly emitted execution commands."""
+
+        if isinstance(event, MissionStartRequested):
+            return self.start()
+        if isinstance(event, ExecutionCommandCompleted):
+            return self.complete_command(event.command_id)
+        if isinstance(event, ExecutionCommandFailed):
+            return self.fail_command(event.command_id, event.error)
+        return []
 
     @classmethod
     def create_default(
