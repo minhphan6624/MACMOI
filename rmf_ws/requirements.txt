@@ -47,7 +47,6 @@ examples-rclpy-minimal-service==0.19.7
 examples-rclpy-minimal-subscriber==0.19.7
 free-fleet==2.0.0
 free_fleet_adapter==2.0.0
-free_fleet_examples==2.0.0
 generate-parameter-library-py==0.7.1
 geographic-msgs==1.0.6
 geometry-msgs==5.3.7

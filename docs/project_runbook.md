@@ -633,15 +633,8 @@ ros2 service list | grep sound
 Use this after robot Nav2 and Zenoh bridge are running:
 
 ```bash
-source /opt/ros/jazzy/setup.bash
-source .venv/bin/activate
-source install/setup.bash
-
-ros2 run free_fleet_examples nav2_send_navigate_to_pose.py \
-  --frame-id map \
-  --namespace tb3_1 \
-  -x 2.1766 \
-  -y 2.1308
+ros2 action send_goal /tb3_1/navigate_to_pose nav2_msgs/action/NavigateToPose \
+  "{pose: {header: {frame_id: map}, pose: {position: {x: 2.1766, y: 2.1308, z: 0.0}, orientation: {w: 1.0}}}}"
 ```
 
 Current estimated Nav2 map-frame coordinates:
