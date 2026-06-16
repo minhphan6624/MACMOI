@@ -131,7 +131,7 @@ rmf_ws/src/macmoi_assets/maps/aiml-lab.building.yaml
 Active RMF nav graph:
 
 ```text
-rmf_ws/src/macmoi_assets/nav_graphs/1.yaml
+rmf_ws/src/macmoi_assets/nav_graphs/0.yaml
 ```
 
 Current waypoint meaning:
@@ -168,7 +168,7 @@ Use this flow for the normal lab run with both robots connected to RMF.
 On robot 1:
 
 ```bash
-source /home/ubuntu/MACMOI/robot_ws/install/setup.bash
+source robot_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ros2 launch robot_bringup robot.launch.py robot_id:=tb3_1
@@ -177,7 +177,7 @@ ros2 launch robot_bringup robot.launch.py robot_id:=tb3_1
 On robot 2:
 
 ```bash
-source /home/ubuntu/MACMOI/robot_ws/install/setup.bash
+source robot_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ros2 launch robot_bringup robot.launch.py robot_id:=tb3_2
@@ -731,7 +731,7 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 gdb --args python3 \
   $(ros2 pkg prefix free_fleet_adapter)/lib/free_fleet_adapter/fleet_adapter.py \
   -c src/macmoi_free_fleet_bringup/config/fleet/aiml_lab_multi_tb3_fleet.yaml \
-  -n src/macmoi_assets/nav_graphs/1.yaml
+  -n src/macmoi_assets/nav_graphs/0.yaml
 ```
 
 In `gdb`:
@@ -752,7 +752,7 @@ source /opt/ros/jazzy/setup.bash
 source .venv/bin/activate
 source install/setup.bash
 
-rm -f src/macmoi_assets/nav_graphs/1.yaml
+rm -f src/macmoi_assets/nav_graphs/*.yaml
 
 ros2 run rmf_building_map_tools building_map_generator nav \
   src/macmoi_assets/maps/aiml-lab.building.yaml \
@@ -786,7 +786,7 @@ rmf_ws/src/macmoi_free_fleet_bringup/config/fleet/aiml_lab_multi_tb3_fleet.yaml
 rmf_ws/src/macmoi_free_fleet_bringup/config/fleet/aiml_lab_single_tb3_fleet.yaml
 ```
 
-The `rmf` points must come from the generated `nav_graphs/1.yaml`. The `robot`
+The `rmf` points must come from the generated `nav_graphs/0.yaml`. The `robot`
 points must be matching Nav2 `map` coordinates.
 
 After editing, rebuild `macmoi_free_fleet_bringup`:
