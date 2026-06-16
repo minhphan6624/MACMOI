@@ -1,8 +1,8 @@
 rmf_fleet:
   name: "tb3_lab"
   limits:
-    linear: [0.3, 3.0]
-    angular: [1.0, 3.2]
+    linear: [0.24, 0.5]
+    angular: [0.8, 1.5]
   profile:
     footprint: 0.22
     vicinity: 0.5
@@ -26,32 +26,33 @@ rmf_fleet:
   task_capabilities:
     loop: true
     delivery: false
-  finishing_request: "charge"
-  responsive_wait: true
+  finishing_request: "nothing"
+  responsive_wait: false
   robots:
     tb3_1:
       charger: "robot1_home"
-      responsive_wait: true
+      responsive_wait: false
       navigation_stack: 2
       init_timeout_sec: 30
       initial_map: "LG"
       map_frame: "map"
       robot_frame: "base_footprint"
+      verified_arrival_tolerance_m: 0.12
       maps:
         LG:
-          map_url: "/home/minhqphan/projects/MACMOI/rmf_ws/install/free_fleet_bringup/share/free_fleet_bringup/maps/aiml_lab.yaml"
-
-    # tb3_2:
-    #   charger: "robot2_home"
-    #   responsive_wait: false
-    #   navigation_stack: 2
-    #   init_timeout_sec: 30
-    #   initial_map: "LG"
-    #   map_frame: "map"
-    #   robot_frame: "base_footprint"
-    #   maps:
-    #     LG:
-    #       map_url: "/home/minhqphan/projects/MACMOI/rmf_ws/install/free_fleet_bringup/share/free_fleet_bringup/maps/aiml_lab.yaml"
+          map_url: "../../maps/aiml_lab.yaml"
+    tb3_2:
+      charger: "robot2_home"
+      responsive_wait: false
+      navigation_stack: 2
+      init_timeout_sec: 30
+      initial_map: "LG"
+      map_frame: "map"
+      robot_frame: "base_footprint"
+      verified_arrival_tolerance_m: 0.12
+      maps:
+        LG:
+          map_url: "../../maps/aiml_lab.yaml"
   robot_state_update_frequency: 10.0
 
 reference_coordinates:
