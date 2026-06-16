@@ -5,6 +5,9 @@ Runbook for the TurtleBot3 / Nav2 / Open-RMF / Free Fleet integration.
 The main workflow is the two-robot RMF deployment. Optional sections cover the
 web UI, running RMF components separately, and maintenance/debug tasks.
 
+Run the command snippets from the workspace/project root unless a section says
+otherwise.
+
 # 1. Initial Setup
 
 ## 1.1. Central PC Environment
@@ -14,11 +17,9 @@ manager, or RMF task commands:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
-source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+source .venv/bin/activate
+source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
-export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 ```
 
 If using a custom ROS domain, export the same value in every terminal:
@@ -32,7 +33,7 @@ export ROS_DOMAIN_ID=<domain_id>
 Use this on each TurtleBot3 PC / Raspberry Pi:
 
 ```bash
-source /home/ubuntu/MACMOI/robot_ws/install/setup.bash
+source robot_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ```
 
@@ -41,7 +42,7 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 Build `rmf_ws` on the central PC:
 
 ```bash
-cd /home/minhqphan/projects/MACMOI/rmf_ws
+cd rmf_ws
 source /opt/ros/jazzy/setup.bash
 source .venv/bin/activate
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
@@ -54,7 +55,7 @@ source install/setup.bash
 Build `robot_ws` on each robot PC if it has not already been built:
 
 ```bash
-cd /home/ubuntu/MACMOI/robot_ws
+cd robot_ws
 source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install
 source install/setup.bash
@@ -63,7 +64,7 @@ source install/setup.bash
 Install web dependencies only if you plan to use the web UI:
 
 ```bash
-cd /home/minhqphan/projects/MACMOI/web
+cd web
 pnpm install
 ```
 
@@ -72,13 +73,13 @@ pnpm install
 Active building file:
 
 ```text
-rmf_ws/src/rmf_bringup/maps/aiml-lab.building.yaml
+rmf_ws/src/MACMOI_free_fleet_assets/maps/aiml-lab.building.yaml
 ```
 
 Active RMF nav graph:
 
 ```text
-rmf_ws/src/rmf_bringup/nav_graphs/1.yaml
+rmf_ws/src/MACMOI_free_fleet_assets/nav_graphs/1.yaml
 ```
 
 Current waypoint meaning:
@@ -198,15 +199,11 @@ On the central PC:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
-source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+source .venv/bin/activate
+source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 
-ros2 launch rmf_bringup system.launch.py \
-  use_sim_time:=false \
-  headless:=false \
-  config_file:=$FREE_FLEET_BRINGUP_SHARE/config/fleet/aiml_lab_multi_tb3_fleet.yaml
+ros2 launch rmf_bringup system.launch.py
 ```
 
 Healthy startup should add both robots to fleet `tb3_lab`, with chargers:
@@ -249,8 +246,8 @@ state only after it receives the matching execution result.
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
-source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+source .venv/bin/activate
+source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ros2 run mission_manager mission_manager_node \
@@ -391,7 +388,7 @@ ENOSPC: System limit for number of file watchers reached
 build and preview the demo instead:
 
 ```bash
-cd /home/minhqphan/projects/MACMOI/web/packages/rmf-dashboard-framework
+cd web/packages/rmf-dashboard-framework
 pnpm exec vite build examples/demo -c examples/shared/vite.config.ts
 pnpm exec vite preview --host 127.0.0.1 --port 5173 --outDir examples/demo/dist
 ```
@@ -413,9 +410,9 @@ On the central PC:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+source install/setup.bash
 
-cd /home/minhqphan/projects/MACMOI/web/packages/api-server
+cd web/packages/api-server
 pnpm start
 ```
 
@@ -431,16 +428,12 @@ Use the same main RMF launch, but pass the API server internal endpoint:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
-source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+source .venv/bin/activate
+source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 
 ros2 launch rmf_bringup system.launch.py \
-  use_sim_time:=false \
-  headless:=false \
-  server_uri:=http://localhost:8000/_internal \
-  config_file:=$FREE_FLEET_BRINGUP_SHARE/config/fleet/aiml_lab_multi_tb3_fleet.yaml
+  server_uri:=http://localhost:8000/_internal
 ```
 
 ## 3.3. Start The Dashboard
@@ -448,7 +441,7 @@ ros2 launch rmf_bringup system.launch.py \
 On the central PC:
 
 ```bash
-cd /home/minhqphan/projects/MACMOI/web/packages/rmf-dashboard-framework
+cd web/packages/rmf-dashboard-framework
 pnpm start:example examples/demo
 ```
 
@@ -469,15 +462,12 @@ On the central PC:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
-source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+source .venv/bin/activate
+source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
 
 ros2 launch rmf_bringup rmf_core.launch.xml \
-  use_sim_time:=false \
-  headless:=false \
-  config_file:=$SYSTEM_RMF_SHARE/maps/aiml-lab.building.yaml \
+  config_file:=src/MACMOI_free_fleet_assets/maps/aiml-lab.building.yaml \
   initial_map:=LG
 ```
 
@@ -493,16 +483,11 @@ On the central PC:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
-source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+source .venv/bin/activate
+source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
-export FREE_FLEET_BRINGUP_SHARE=$(ros2 pkg prefix free_fleet_bringup)/share/free_fleet_bringup
 
-ros2 launch free_fleet_bringup aiml_lab_ff_bringup.launch.xml \
-  use_sim_time:=false \
-  config_file:=$FREE_FLEET_BRINGUP_SHARE/config/fleet/aiml_lab_multi_tb3_fleet.yaml \
-  nav_graph_file:=$SYSTEM_RMF_SHARE/nav_graphs/1.yaml
+ros2 launch MACMOI_free_fleet_assets aiml_lab_ff_bringup.launch.xml
 ```
 
 For web UI integration, set:
@@ -535,8 +520,8 @@ Use this after robot Nav2 and Zenoh bridge are running:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
-source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+source .venv/bin/activate
+source install/setup.bash
 
 ros2 run free_fleet_examples nav2_send_navigate_to_pose.py \
   --frame-id map \
@@ -587,7 +572,7 @@ commands.
 ## 5.4. Mission Runtime Checks
 
 ```bash
-cd /home/minhqphan/projects/MACMOI
+cd MACMOI
 source /opt/ros/jazzy/setup.bash
 source rmf_ws/.venv/bin/activate
 source rmf_ws/install/setup.bash
@@ -625,15 +610,14 @@ Run this while RMF core is already running:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
-source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+source .venv/bin/activate
+source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-export SYSTEM_RMF_SHARE=$(ros2 pkg prefix rmf_bringup)/share/rmf_bringup
 
-gdb --args /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/python3 \
-  /home/minhqphan/projects/MACMOI/rmf_ws/install/free_fleet_adapter/lib/free_fleet_adapter/fleet_adapter.py \
-  -c /home/minhqphan/projects/MACMOI/rmf_ws/src/free_fleet_bringup/config/fleet/aiml_lab_multi_tb3_fleet.yaml \
-  -n $SYSTEM_RMF_SHARE/nav_graphs/1.yaml
+gdb --args python3 \
+  $(ros2 pkg prefix free_fleet_adapter)/lib/free_fleet_adapter/fleet_adapter.py \
+  -c src/MACMOI_free_fleet_assets/config/fleet/aiml_lab_multi_tb3_fleet.yaml \
+  -n src/MACMOI_free_fleet_assets/nav_graphs/1.yaml
 ```
 
 In `gdb`:
@@ -651,24 +635,24 @@ Run this after editing the Traffic Editor building file:
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MACMOI/rmf_ws/.venv/bin/activate
-source /home/minhqphan/projects/MACMOI/rmf_ws/install/setup.bash
+source .venv/bin/activate
+source install/setup.bash
 
-rm -f /home/minhqphan/projects/MACMOI/rmf_ws/src/rmf_bringup/nav_graphs/1.yaml
+rm -f src/MACMOI_free_fleet_assets/nav_graphs/1.yaml
 
 ros2 run rmf_building_map_tools building_map_generator nav \
-  /home/minhqphan/projects/MACMOI/rmf_ws/src/rmf_bringup/maps/aiml-lab.building.yaml \
-  /home/minhqphan/projects/MACMOI/rmf_ws/src/rmf_bringup/nav_graphs
+  src/MACMOI_free_fleet_assets/maps/aiml-lab.building.yaml \
+  src/MACMOI_free_fleet_assets/nav_graphs
 ```
 
 Then rebuild the bringup packages:
 
 ```bash
-cd /home/minhqphan/projects/MACMOI/rmf_ws
+cd rmf_ws
 source /opt/ros/jazzy/setup.bash
 source .venv/bin/activate
 
-colcon build --packages-select rmf_bringup free_fleet_bringup --symlink-install
+colcon build --packages-select rmf_bringup MACMOI_free_fleet_assets --symlink-install
 source install/setup.bash
 ```
 
@@ -678,28 +662,28 @@ If Traffic Editor vertices move, update `reference_coordinates` in both fleet
 configs:
 
 ```text
-rmf_ws/src/free_fleet_bringup/config/fleet/aiml_lab_multi_tb3_fleet.yaml
-rmf_ws/src/free_fleet_bringup/config/fleet/aiml_lab_single_tb3_fleet.yaml
+rmf_ws/src/MACMOI_free_fleet_assets/config/fleet/aiml_lab_multi_tb3_fleet.yaml
+rmf_ws/src/MACMOI_free_fleet_assets/config/fleet/aiml_lab_single_tb3_fleet.yaml
 ```
 
 The `rmf` points must come from the generated `nav_graphs/1.yaml`. The `robot`
 points must be matching Nav2 `map` coordinates.
 
-After editing, rebuild `free_fleet_bringup`:
+After editing, rebuild `MACMOI_free_fleet_assets`:
 
 ```bash
-cd /home/minhqphan/projects/MACMOI/rmf_ws
+cd rmf_ws
 source /opt/ros/jazzy/setup.bash
 source .venv/bin/activate
 
-colcon build --packages-select free_fleet_bringup --symlink-install
+colcon build --packages-select MACMOI_free_fleet_assets --symlink-install
 source install/setup.bash
 ```
 
 # Start simulated handling node
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/minhqphan/projects/MACMOI/robot_ws/install/setup.bash
+source robot_ws/install/setup.bash
 
 ros2 run robot_bringup handling_simulator_node --ros-args \
   -p robot_id:=tb3_1 \
