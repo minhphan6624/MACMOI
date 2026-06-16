@@ -2,7 +2,8 @@
 <!-- Launch file for free_fleet adapters in the AIML Lab with generated nav graphs -->
 <launch>
   <arg name="server_uri" default="" description="The URI of the api server to transmit state and task information."/>
-  <arg name="nav_graph_file" description="Path to the RMF navigation graph YAML."/>
+  <arg name="nav_graph_file" default="$(find-pkg-share MACMOI_free_fleet_assets)/nav_graphs/1.yaml" 
+    description="Path to the RMF navigation graph YAML."/>
   <arg name="config_file" default="$(find-pkg-share MACMOI_free_fleet_assets)/config/fleet/aiml_lab_multi_tb3_fleet.yaml"
       description="Fleet adapter config file"/>
   <arg name="use_sim_time" default="false" description="Use the /clock topic for time to sync with simulation"/>
