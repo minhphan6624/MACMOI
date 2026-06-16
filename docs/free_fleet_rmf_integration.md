@@ -68,11 +68,11 @@ Do not move the runtime robot-side Zenoh bridge config off the Pi. It can stay i
 
 # 3.  Current Site / Map State
 
-Lab building file: `rmf_ws/src/rmf_bringup/maps/aiml-lab.building.yaml`
+Lab building file: `rmf_ws/src/macmoi_assets/maps/aiml-lab.building.yaml`
 
-Lab drawing: `rmf_ws/src/rmf_bringup/maps/aiml-lab.png`
+Lab drawing: `rmf_ws/src/macmoi_assets/maps/aiml-lab.png`
 
-Generated RMF nav graph: `rmf_ws/src/rmf_bringup/nav_graphs/1.yaml`
+Generated RMF nav graph: `rmf_ws/src/macmoi_assets/nav_graphs/1.yaml`
 
 The current RMF graph is intentionally minimal for the mission corridor:
 
@@ -93,7 +93,7 @@ waypoints for the two TurtleBot3 robots.
 Fleet config:
 
 ```text
-rmf_ws/src/free_fleet_bringup/config/fleet/aiml_lab_multi_tb3_fleet.yaml
+rmf_ws/src/macmoi_free_fleet_bringup/config/fleet/aiml_lab_multi_tb3_fleet.yaml
 ```
 
 Current fleet is called `tb3_lab`

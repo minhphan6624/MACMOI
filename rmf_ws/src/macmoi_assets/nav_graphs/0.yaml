@@ -1,0 +1,76 @@
+building_name: aiml-lab-map1
+doors: {}
+levels:
+  LG:
+    lanes:
+    - - 0
+      - 1
+      - {}
+    - - 1
+      - 0
+      - {}
+    - - 2
+      - 3
+      - {}
+    - - 3
+      - 2
+      - {}
+    - - 4
+      - 5
+      - {mutex: transfer_zone}
+    - - 5
+      - 4
+      - {mutex: transfer_zone}
+    - - 5
+      - 6
+      - {mutex: transfer_zone}
+    - - 6
+      - 5
+      - {mutex: transfer_zone}
+    - - 6
+      - 1
+      - {}
+    - - 1
+      - 6
+      - {}
+    - - 4
+      - 2
+      - {}
+    - - 2
+      - 4
+      - {}
+    - - 3
+      - 4
+      - {}
+    - - 4
+      - 3
+      - {}
+    - - 6
+      - 0
+      - {}
+    - - 0
+      - 6
+      - {}
+    vertices:
+    - - 15.554725329020794
+      - -3.8208986765890605
+      - {is_charger: true, name: robot1_home}
+    - - 16.140118748395917
+      - -5.916855843532307
+      - {name: source}
+    - - 9.297845825102835
+      - -5.241200700667293
+      - {name: destination}
+    - - 10.706303773928157
+      - -3.710551375482774
+      - {is_charger: true, name: robot2_home}
+    - - 11.490282855043752
+      - -5.05574222233213
+      - {name: downstream_exit}
+    - - 13.002277761704939
+      - -4.896143308299156
+      - {name: transfer}
+    - - 14.592789017230212
+      - -5.303036643550199
+      - {name: upstream_exit}
+lifts: {}
