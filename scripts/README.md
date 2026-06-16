@@ -1,6 +1,8 @@
 # MACMOI Helper Scripts
 
 Thin wrappers for repeated commands from `docs/project_runbook.md`.
+They assume the `macmoi_assets` and `macmoi_free_fleet_bringup` packages are
+available in `rmf_ws/src`.
 
 Run these from the project root:
 
