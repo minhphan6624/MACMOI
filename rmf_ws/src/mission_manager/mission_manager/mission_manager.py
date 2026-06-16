@@ -6,6 +6,9 @@ from .mission_events import (
     ExecutionCommandCompleted,
     ExecutionCommandFailed,
     MissionStartRequested,
+    OperatorAbortRequested,
+    OperatorPauseRequested,
+    OperatorResumeRequested,
 )
 from .mission_definition import (
     DESTINATION_WAYPOINT,
@@ -34,6 +37,7 @@ class MissionStatus(Enum):
     PAUSED = "PAUSED"
     COMPLETED = "COMPLETED"
     ABORTED = "ABORTED"
+    FAILED = "FAILED"
 
 
 @dataclass
@@ -71,6 +75,12 @@ class MissionManager:
             return self._handle_command_completed(event)
         if isinstance(event, ExecutionCommandFailed):
             return self._handle_command_failed(event)
+        if isinstance(event, OperatorPauseRequested):
+            return self._handle_operator_pause_requested(event)
+        if isinstance(event, OperatorResumeRequested):
+            return self._handle_operator_resume_requested(event)
+        if isinstance(event, OperatorAbortRequested):
+            return self._handle_operator_abort_requested(event)
         return []
 
     # ----- Internal Event Handlers -----
@@ -158,6 +168,37 @@ class MissionManager:
         task.blocked_reason = error
         task.blocked_by = command.robot_id
         task.next_expected_event = "operator intervention"
+        self.runtime.status = MissionStatus.FAILED
+        return []
+
+    def _handle_operator_pause_requested(
+        self,
+        event: OperatorPauseRequested,
+    ) -> list[ExecutionCommand]:
+        if self.runtime.status == MissionStatus.RUNNING:
+            self.runtime.status = MissionStatus.PAUSED
+        return []
+
+    def _handle_operator_resume_requested(
+        self,
+        event: OperatorResumeRequested,
+    ) -> list[ExecutionCommand]:
+        if self.runtime.status == MissionStatus.PAUSED:
+            self.runtime.status = MissionStatus.RUNNING
+            return self._advance()
+        return []
+
+    def _handle_operator_abort_requested(
+        self,
+        event: OperatorAbortRequested,
+    ) -> list[ExecutionCommand]:
+        if self.runtime.status in (
+            MissionStatus.READY,
+            MissionStatus.RUNNING,
+            MissionStatus.PAUSED,
+            MissionStatus.FAILED,
+        ):
+            self.runtime.status = MissionStatus.ABORTED
         return []
 
     @classmethod
