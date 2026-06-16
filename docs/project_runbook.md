@@ -8,6 +8,52 @@ web UI, running RMF components separately, and maintenance/debug tasks.
 Run the command snippets from the workspace/project root unless a section says
 otherwise.
 
+## Helper Scripts
+
+Common central-PC commands are wrapped in `scripts/` to avoid repeating the ROS
+and workspace setup in every terminal. The wrappers resolve paths from the repo
+root, so run them from the project root:
+
+```bash
+scripts/build-rmf.sh
+scripts/launch-rmf.sh
+scripts/launch-rmf-common.sh
+scripts/launch-free-fleet.sh
+scripts/mission-manager.sh
+scripts/echo-mission-topic.sh
+scripts/regenerate-nav-graph.sh
+```
+
+For an interactive RMF terminal, source the shared environment helper:
+
+```bash
+source scripts/env-rmf.sh
+cd rmf_ws
+```
+
+The mission manager wrapper accepts optional positional arguments:
+
+```bash
+scripts/mission-manager.sh <mission_id> <total_packages> <auto_start>
+```
+
+Example:
+
+```bash
+scripts/mission-manager.sh m2 5 true
+```
+
+Launch wrappers pass through ROS launch arguments:
+
+```bash
+scripts/launch-rmf.sh server_uri:=http://localhost:8000/_internal
+scripts/launch-rmf-common.sh server_uri:=http://localhost:8000/_internal
+scripts/launch-free-fleet.sh server_uri:=http://localhost:8000/_internal
+```
+
+The manual commands below are kept as the source of truth for what each helper
+does.
+
 # 1. Initial Setup
 
 ## 1.1. Central PC Environment
@@ -50,6 +96,12 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 rosdep install --from-paths src --ignore-src --rosdistro jazzy -yr
 colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
+```
+
+Helper equivalent from the project root:
+
+```bash
+scripts/build-rmf.sh
 ```
 
 Build `robot_ws` on each robot PC if it has not already been built:
@@ -214,6 +266,12 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ros2 launch rmf_bringup system.launch.py
 ```
 
+Helper equivalent from the project root:
+
+```bash
+scripts/launch-rmf.sh
+```
+
 Healthy startup should add both robots to fleet `tb3_lab`, with chargers:
 
 ```text
@@ -263,6 +321,12 @@ ros2 run mission_manager mission_manager_node \
   -p mission_id:=m1 \
   -p total_packages:=3 \
   -p auto_start:=true
+```
+
+Helper equivalent from the project root:
+
+```bash
+scripts/mission-manager.sh m1 3 true
 ```
 
 For more packages:
@@ -318,6 +382,12 @@ ros2 topic echo --full-length /mission_state std_msgs/msg/String \
   --field data
 ```
 
+Helper equivalent from the project root:
+
+```bash
+scripts/echo-mission-topic.sh /mission_state
+```
+
 The `mission_state` JSON is the compact dashboard/operator snapshot. Use the
 verbose debug topic for raw mission internals:
 
@@ -328,6 +398,12 @@ ros2 topic echo --full-length /mission_debug_state std_msgs/msg/String \
   --field data
 ```
 
+Helper equivalent from the project root:
+
+```bash
+scripts/echo-mission-topic.sh /mission_debug_state
+```
+
 Mission events are also published one at a time:
 
 ```bash
@@ -335,6 +411,12 @@ ros2 topic echo --full-length /mission_events std_msgs/msg/String \
   --qos-reliability reliable \
   --qos-durability transient_local \
   --field data
+```
+
+Helper equivalent from the project root:
+
+```bash
+scripts/echo-mission-topic.sh /mission_events
 ```
 
 These mission topics are `std_msgs/msg/String` values containing JSON, so
@@ -479,10 +561,22 @@ ros2 launch rmf_bringup rmf_core.launch.xml \
   initial_map:=LG
 ```
 
+Helper equivalent from the project root:
+
+```bash
+scripts/launch-rmf-common.sh
+```
+
 For web UI integration, set:
 
 ```bash
 server_uri:=http://localhost:8000/_internal
+```
+
+With the helper:
+
+```bash
+scripts/launch-rmf-common.sh server_uri:=http://localhost:8000/_internal
 ```
 
 ## 4.2. Free Fleet Adapter Only
@@ -498,10 +592,22 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ros2 launch macmoi_free_fleet_bringup aiml_lab_ff_bringup.launch.xml
 ```
 
+Helper equivalent from the project root:
+
+```bash
+scripts/launch-free-fleet.sh
+```
+
 For web UI integration, set:
 
 ```bash
 server_uri:=http://localhost:8000/_internal
+```
+
+With the helper:
+
+```bash
+scripts/launch-free-fleet.sh server_uri:=http://localhost:8000/_internal
 ```
 
 # 5. Optional Checks And Tests
@@ -662,6 +768,12 @@ source .venv/bin/activate
 
 colcon build --packages-select rmf_bringup macmoi_assets macmoi_free_fleet_bringup --symlink-install
 source install/setup.bash
+```
+
+Helper equivalent from the project root:
+
+```bash
+scripts/regenerate-nav-graph.sh
 ```
 
 ## 6.2. Update Reference Coordinates
