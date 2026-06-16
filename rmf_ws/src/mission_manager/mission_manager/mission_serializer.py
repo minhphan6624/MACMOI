@@ -22,6 +22,7 @@ MISSION_STATUS_TO_UI = {
     "PAUSED": "paused",
     "COMPLETED": "completed",
     "ABORTED": "cancelled",
+    "FAILED": "failed",
 }
 
 TASK_STATUS_TO_UI = {
@@ -171,8 +172,31 @@ def serialize_mission_debug_state(mission_manager, adapter=None, node_debug=None
 
 def _event_message(event: dict) -> str:
     event_type = event.get("type")
+    if event_type == "MissionStartRequested":
+        return f"Mission start requested from {event.get('source')}"
+    if event_type == "OperatorPauseRequested":
+        return f"Mission pause requested from {event.get('source')}"
+    if event_type == "OperatorResumeRequested":
+        return f"Mission resume requested from {event.get('source')}"
+    if event_type == "OperatorAbortRequested":
+        return f"Mission abort requested from {event.get('source')}"
     if event_type == "ExecutionCommandCompleted":
-        return f"Mission command completed from {event.get('source')}: {event.get('command_id')}"
+        return f"Execution command completed from {event.get('source')}: {event.get('command_id')}"
+    if event_type == "ExecutionCommandFailed":
+        return (
+            f"Execution command failed from {event.get('source')}: "
+            f"{event.get('command_id')} ({event.get('error')})"
+        )
+    if event_type == "ExecutionCommandRetry":
+        return (
+            f"Execution command retry after {event.get('failed_command_id')}: "
+            f"{event.get('retry_command_ids')}"
+        )
+    if event_type == "RmfTaskSummaryCompleted":
+        return (
+            "RMF task summary completed; waiting for Nav2 arrival result: "
+            f"{event.get('command_id')}"
+        )
     if event_type == "OperatorCommand":
         return f"Operator command requested: {event.get('command')}"
     if "status" in event and "command_id" in event:
