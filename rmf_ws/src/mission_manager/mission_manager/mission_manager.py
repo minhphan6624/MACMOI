@@ -2,6 +2,11 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .execution import ExecutionCommand, ExecutionCommandType, ExecutionManager
+from .mission_events import (
+    ExecutionCommandCompleted,
+    ExecutionCommandFailed,
+    MissionStartRequested,
+)
 from .mission_definition import (
     DESTINATION_WAYPOINT,
     DOWNSTREAM_WAIT_WAYPOINT,
@@ -30,6 +35,7 @@ class MissionStatus(Enum):
     COMPLETED = "COMPLETED"
     ABORTED = "ABORTED"
 
+
 @dataclass
 class MissionRuntime:
     """In-memory state for one active mission run."""
@@ -41,7 +47,7 @@ class MissionRuntime:
 
 
 class MissionManager:
-    """Coordinates mission lifecycle, task scheduling, and command completion."""
+    """Coordinates mission lifecycle, task scheduling, and mission events."""
 
     def __init__(
         self,
@@ -56,6 +62,104 @@ class MissionManager:
         self.task_runner = TransportTaskBtRunner(runtime.world, self.execution_manager)
         self.max_arrival_retries = max_arrival_retries
 
+    def handle_event(self, event) -> list[ExecutionCommand]:
+        """Apply a mission event and return newly emitted execution commands."""
+
+        if isinstance(event, MissionStartRequested):
+            return self._handle_start_requested(event)
+        if isinstance(event, ExecutionCommandCompleted):
+            return self._handle_command_completed(event)
+        if isinstance(event, ExecutionCommandFailed):
+            return self._handle_command_failed(event)
+        return []
+
+    # ----- Internal Event Handlers -----
+    def _handle_start_requested(
+        self,
+        event: MissionStartRequested,
+    ) -> list[ExecutionCommand]:
+        if self.runtime.status == MissionStatus.READY:
+            self.runtime.status = MissionStatus.RUNNING
+
+        return self._advance()
+
+    def _handle_command_completed(
+        self,
+        event: ExecutionCommandCompleted,
+    ) -> list[ExecutionCommand]:
+        command_id = event.command_id
+
+        if command_id not in self.execution_manager.commands:
+            return []
+
+        command = self.execution_manager.commands[command_id]
+        if not self.execution_manager.mark_succeeded(command_id):
+            return []
+
+        task = self.runtime.tasks.get(command.task_id)
+        if task is None:
+            return []
+
+        commands = self.task_runner.handle_command_succeeded(task, command)
+
+        if commands:
+            task = self.scheduler.next_ready_task(
+                self.runtime.tasks,
+                self.runtime.world,
+            )
+            if task is None:
+                return commands
+
+            return [*commands, *self.task_runner.start(task)]
+
+        return self._advance()
+
+    def _handle_command_failed(self, event: ExecutionCommandFailed) -> list[ExecutionCommand]:
+        command_id = event.command_id
+        error = event.error
+
+        if command_id not in self.execution_manager.commands:
+            return []
+
+        command = self.execution_manager.commands[command_id]
+        if not self.execution_manager.mark_failed(command_id, error):
+            return []
+
+        task = self.runtime.tasks.get(command.task_id)
+        if task is None:
+            return []
+
+        if task.active_command_id != command_id:
+            return []
+
+        task.active_command_id = None
+        if (
+            error == "arrival_not_verified"
+            and command.command_type == ExecutionCommandType.MOVE_ROBOT
+            and command.target is not None
+        ):
+            retry_key = f"arrival_retry:{command.target}"
+            retries = int(task.bt_blackboard.get(retry_key, 0))
+
+            if retries < self.max_arrival_retries:
+                task.bt_blackboard[retry_key] = retries + 1
+                task.status = MissionTaskStatus.RUNNING
+
+                retry = self.execution_manager.create_move(
+                    command.task_id,
+                    command.robot_id,
+                    command.target,
+                )
+
+                task.active_command_id = retry.command_id
+                return [retry]
+
+        task.status = MissionTaskStatus.FAILED
+        task.blocked_reason = error
+        task.blocked_by = command.robot_id
+        task.next_expected_event = "operator intervention"
+        return []
+
     @classmethod
     def create_default(
         cls,
@@ -69,12 +173,10 @@ class MissionManager:
         tasks = {}
         items = {}
         
-        # Create tasks for each Package
         for index in range(1, total_packages + 1):
-            
             item_id = f"P{index}"
             items[item_id] = PackageState(item_id, SOURCE_WAYPOINT)
-            
+
             tasks[f"{item_id}:source_to_transfer"] = TransportItemTask(
                 task_id=f"{item_id}:source_to_transfer",
                 item_id=item_id,
@@ -91,16 +193,12 @@ class MissionManager:
                 robot_id=downstream_robot,
             )
 
-        # Mission-layer beliefs of the main objecst
         world = MissionWorld(
-            
             robots={
                 upstream_robot: RobotState(upstream_robot, UPSTREAM_HOME_WAYPOINT),
                 downstream_robot: RobotState(downstream_robot, DOWNSTREAM_HOME_WAYPOINT),
             },
-
             items=items,
-            
             resources={
                 TRANSFER_WAYPOINT: ResourceState(
                     resource_id=TRANSFER_WAYPOINT,
@@ -116,130 +214,34 @@ class MissionManager:
 
         return cls(MissionRuntime(mission_id, MissionStatus.READY, tasks, world))
 
-    def start(self) -> list[ExecutionCommand]:
-        """Start a ready mission and return any commands it immediately emits."""
-
-        if self.runtime.status == MissionStatus.READY:
-            self.runtime.status = MissionStatus.RUNNING
-
-        return self.tick()
-
-    def tick(self) -> list[ExecutionCommand]:
+    def _advance(self) -> list[ExecutionCommand]:
         """Advance mission logic and return newly emitted execution commands."""
 
-        # Do nothing if the current mission is already running
         if self.runtime.status != MissionStatus.RUNNING:
             return []
-            
-        # If All Task succeeded, mark mission as completed
-        if all(task.status == MissionTaskStatus.SUCCEEDED for task in self.runtime.tasks.values()):
+
+        if all(
+            task.status == MissionTaskStatus.SUCCEEDED
+            for task in self.runtime.tasks.values()
+        ):
             self.runtime.status = MissionStatus.COMPLETED
             return []
 
-        # If any task is running or blocked, try to advance it
         for task in self.runtime.tasks.values():
             if task.status in (MissionTaskStatus.RUNNING, MissionTaskStatus.BLOCKED):
                 commands = self.task_runner.advance(task)
-                
+
                 if commands:
-                    # Return exising command and possibly start another ready task if posisble
-                    task = self.scheduler.next_ready_task(self.runtime.tasks, self.runtime.world)
-                    
+                    task = self.scheduler.next_ready_task( self.runtime.tasks, self.runtime.world)
+
                     if task is None:
                         return commands
-                    
+
                     return [*commands, *self.task_runner.start(task)]
-                    
 
-        # Otherwise prompt the scheduler for next task
         task = self.scheduler.next_ready_task(self.runtime.tasks, self.runtime.world)
-        
+
         if task is None:
             return []
 
-        # Return a list of ExecutionComamnd for the node to send to rmf if there is a task
         return self.task_runner.start(task)
-
-    def complete_command(self, command_id: str) -> list[ExecutionCommand]:
-        """
-        Apply a completed execution command and continue mission progress.    
-        Called when a move/load/unload command succeeds.
-        """
-        
-        # Ignore unkonwn command completions
-        # This can happen if an old/stale/foreign completion arrives.
-        if command_id not in self.execution_manager.commands:
-            return []
-        
-        # Ignore duplicate or terminal completeions
-        command = self.execution_manager.commands[command_id]
-        if not self.execution_manager.mark_succeeded(command_id):
-            return []
-        
-        # Ignore a command whose task no longer exists. 
-        task = self.runtime.tasks.get(command.task_id)
-        if task is None:
-            return []
-        
-        # Delegate handling for the runner
-        commands = self.task_runner.handle_command_succeeded(task, command)
-
-        if commands:
-            task = self.scheduler.next_ready_task(self.runtime.tasks, self.runtime.world)
-            if task is None:
-                return commands
-            
-            return [*commands, *self.task_runner.start(task)]
-        
-        return self.tick()
-
-    def fail_command(self, command_id: str, error: str) -> list[ExecutionCommand]:
-        """Apply execution failure and retry recoverable move arrivals."""
-
-        # Validations
-        if command_id not in self.execution_manager.commands:
-            return []
-
-        command = self.execution_manager.commands[command_id]
-        if not self.execution_manager.mark_failed(command_id, error):
-            return []
-
-        task = self.runtime.tasks.get(command.task_id)
-        if task is None:
-            return []
-
-        if task.active_command_id != command_id:
-            return []
-
-
-        task.active_command_id = None
-        if (
-            error == "arrival_not_verified"
-            and command.command_type == ExecutionCommandType.MOVE_ROBOT
-            and command.target is not None
-        ):
-            retry_key = f"arrival_retry:{command.target}"
-            retries = int(task.bt_blackboard.get(retry_key, 0))
-
-            # Try sending MOVE_ROBOT commands to the same goal twice
-            if retries < self.max_arrival_retries:
-                task.bt_blackboard[retry_key] = retries + 1
-                task.status = MissionTaskStatus.RUNNING
-                
-                retry = self.execution_manager.create_move(
-                    command.task_id,
-                    command.robot_id,
-                    command.target,
-                )
-                
-                task.active_command_id = retry.command_id
-                return [retry]
-
-        # If task still fails after 2 retries, mark as failed
-        task.status = MissionTaskStatus.FAILED
-        task.blocked_reason = error
-        task.blocked_by = command.robot_id
-        task.next_expected_event = "operator intervention"
-        return []
-    
-        
