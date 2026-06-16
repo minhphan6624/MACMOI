@@ -23,7 +23,12 @@ from .mission_serializer import (
 from .mission_events import (
     ExecutionCommandCompleted,
     ExecutionCommandFailed,
+    ExecutionCommandRetry,
     MissionStartRequested,
+    OperatorAbortRequested,
+    OperatorPauseRequested,
+    OperatorResumeRequested,
+    RmfTaskSummaryCompleted,
 )
 from .mission_manager import MissionManager
 from .rmf_adapter import RmfAdapter
@@ -170,16 +175,7 @@ class MissionManagerNode(Node):
             if command_id is None:
                 continue
             self._record_event(
-                {
-                    "type": "RmfTaskSummaryCompleted",
-                    "command_id": command_id,
-                    "rmf_task_id": task_state.task_id,
-                    "source": "task_summary",
-                    "message": (
-                        "RMF task summary completed; waiting for "
-                        "Nav2 arrival result before advancing mission"
-                    ),
-                }
+                RmfTaskSummaryCompleted(command_id, task_state.task_id)
             )
         self._publish_mission_state()
 
@@ -223,13 +219,24 @@ class MissionManagerNode(Node):
         if command.get("mission_id") != self.mission_manager.runtime.mission_id:
             return
 
-        if command.get("command") == "start":
-            event = MissionStartRequested(source="operator")
+        event = self._operator_event(command.get("command"))
+        if event is not None:
             self._record_event(event)
             self._dispatch_commands(self.mission_manager.handle_event(event))
             return
 
         self.get_logger().warning(f"Unsupported operator command: {command}")
+
+    def _operator_event(self, command: str | None):
+        if command == "start":
+            return MissionStartRequested(source="operator")
+        if command == "pause":
+            return OperatorPauseRequested(source="operator")
+        if command == "resume":
+            return OperatorResumeRequested(source="operator")
+        if command == "abort":
+            return OperatorAbortRequested(source="operator")
+        return None
 
     def _handle_execution_result(self, msg: String) -> None:
         """Handle direct execution results from the Free Fleet/Nav2 side channel."""
@@ -315,14 +322,11 @@ class MissionManagerNode(Node):
     ) -> None:
         if commands:
             self._record_event(
-                {
-                    "type": "ExecutionCommandRetry",
-                    "failed_command_id": failed_command_id,
-                    "retry_command_ids": [
-                        command.command_id for command in commands
-                    ],
-                    "reason": reason,
-                }
+                ExecutionCommandRetry(
+                    failed_command_id,
+                    [command.command_id for command in commands],
+                    reason,
+                )
             )
             self._dispatch_commands(commands)
             return
