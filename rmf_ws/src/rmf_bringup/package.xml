@@ -8,7 +8,8 @@
   <license>Apache License 2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <exec_depend>MACMOI_free_fleet_assets</exec_depend>
+  <exec_depend>macmoi_assets</exec_depend>
+  <exec_depend>macmoi_free_fleet_bringup</exec_depend>
   <exec_depend>free_fleet_adapter</exec_depend>
   <exec_depend>launch</exec_depend>
   <exec_depend>launch_ros</exec_depend>

@@ -16,16 +16,17 @@ def generate_launch_description():
     viz_config_file = LaunchConfiguration('viz_config_file')
 
     system_pkg = FindPackageShare('rmf_bringup')
-    asset_pkg = FindPackageShare('MACMOI_free_fleet_assets')
+    asset_pkg = FindPackageShare('macmoi_assets')
+    fleet_pkg = FindPackageShare('macmoi_free_fleet_bringup')
 
     building_file = PathJoinSubstitution([asset_pkg, 'maps', 'aiml-lab.building.yaml'])
     default_nav_graph_file = PathJoinSubstitution([asset_pkg, 'nav_graphs', '1.yaml'])
     default_viz_config_file = PathJoinSubstitution([system_pkg, 'config', 'rmf.rviz'])
     rmf_core_launch = PathJoinSubstitution([system_pkg, 'launch', 'rmf_core.launch.xml'])
     fleet_config_file = PathJoinSubstitution(
-        [asset_pkg, 'config', 'fleet', 'aiml_lab_multi_tb3_fleet.yaml']
+        [fleet_pkg, 'config', 'fleet', 'aiml_lab_multi_tb3_fleet.yaml']
     )
-    fleet_launch = PathJoinSubstitution([asset_pkg, 'launch', 'aiml_lab_ff_bringup.launch.xml'])
+    fleet_launch = PathJoinSubstitution([fleet_pkg, 'launch', 'aiml_lab_ff_bringup.launch.xml'])
 
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),

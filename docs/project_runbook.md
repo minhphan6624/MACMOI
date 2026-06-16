@@ -73,13 +73,13 @@ pnpm install
 Active building file:
 
 ```text
-rmf_ws/src/MACMOI_free_fleet_assets/maps/aiml-lab.building.yaml
+rmf_ws/src/macmoi_assets/maps/aiml-lab.building.yaml
 ```
 
 Active RMF nav graph:
 
 ```text
-rmf_ws/src/MACMOI_free_fleet_assets/nav_graphs/1.yaml
+rmf_ws/src/macmoi_assets/nav_graphs/1.yaml
 ```
 
 Current waypoint meaning:
@@ -172,6 +172,14 @@ On the central PC:
 
 ```bash
 zenohd
+```
+
+On the central PC, also start the Zenoh bridge that matches the central-side
+deployment:
+
+```bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+~/zenoh/bin/zenoh-bridge-ros2dds -c <central_bridge_config.json5>
 ```
 
 On robot 1:
@@ -467,7 +475,7 @@ source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 ros2 launch rmf_bringup rmf_core.launch.xml \
-  config_file:=src/MACMOI_free_fleet_assets/maps/aiml-lab.building.yaml \
+  config_file:=src/macmoi_assets/maps/aiml-lab.building.yaml \
   initial_map:=LG
 ```
 
@@ -487,7 +495,7 @@ source .venv/bin/activate
 source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 launch MACMOI_free_fleet_assets aiml_lab_ff_bringup.launch.xml
+ros2 launch macmoi_free_fleet_bringup aiml_lab_ff_bringup.launch.xml
 ```
 
 For web UI integration, set:
@@ -616,8 +624,8 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
 gdb --args python3 \
   $(ros2 pkg prefix free_fleet_adapter)/lib/free_fleet_adapter/fleet_adapter.py \
-  -c src/MACMOI_free_fleet_assets/config/fleet/aiml_lab_multi_tb3_fleet.yaml \
-  -n src/MACMOI_free_fleet_assets/nav_graphs/1.yaml
+  -c src/macmoi_free_fleet_bringup/config/fleet/aiml_lab_multi_tb3_fleet.yaml \
+  -n src/macmoi_assets/nav_graphs/1.yaml
 ```
 
 In `gdb`:
@@ -638,11 +646,11 @@ source /opt/ros/jazzy/setup.bash
 source .venv/bin/activate
 source install/setup.bash
 
-rm -f src/MACMOI_free_fleet_assets/nav_graphs/1.yaml
+rm -f src/macmoi_assets/nav_graphs/1.yaml
 
 ros2 run rmf_building_map_tools building_map_generator nav \
-  src/MACMOI_free_fleet_assets/maps/aiml-lab.building.yaml \
-  src/MACMOI_free_fleet_assets/nav_graphs
+  src/macmoi_assets/maps/aiml-lab.building.yaml \
+  src/macmoi_assets/nav_graphs
 ```
 
 Then rebuild the bringup packages:
@@ -652,7 +660,7 @@ cd rmf_ws
 source /opt/ros/jazzy/setup.bash
 source .venv/bin/activate
 
-colcon build --packages-select rmf_bringup MACMOI_free_fleet_assets --symlink-install
+colcon build --packages-select rmf_bringup macmoi_assets macmoi_free_fleet_bringup --symlink-install
 source install/setup.bash
 ```
 
@@ -662,21 +670,21 @@ If Traffic Editor vertices move, update `reference_coordinates` in both fleet
 configs:
 
 ```text
-rmf_ws/src/MACMOI_free_fleet_assets/config/fleet/aiml_lab_multi_tb3_fleet.yaml
-rmf_ws/src/MACMOI_free_fleet_assets/config/fleet/aiml_lab_single_tb3_fleet.yaml
+rmf_ws/src/macmoi_free_fleet_bringup/config/fleet/aiml_lab_multi_tb3_fleet.yaml
+rmf_ws/src/macmoi_free_fleet_bringup/config/fleet/aiml_lab_single_tb3_fleet.yaml
 ```
 
 The `rmf` points must come from the generated `nav_graphs/1.yaml`. The `robot`
 points must be matching Nav2 `map` coordinates.
 
-After editing, rebuild `MACMOI_free_fleet_assets`:
+After editing, rebuild `macmoi_free_fleet_bringup`:
 
 ```bash
 cd rmf_ws
 source /opt/ros/jazzy/setup.bash
 source .venv/bin/activate
 
-colcon build --packages-select MACMOI_free_fleet_assets --symlink-install
+colcon build --packages-select macmoi_free_fleet_bringup --symlink-install
 source install/setup.bash
 ```
 
