@@ -187,6 +187,16 @@ def _event_message(event: dict) -> str:
             f"Execution command failed from {event.get('source')}: "
             f"{event.get('command_id')} ({event.get('error')})"
         )
+    if event_type == "ExecutionCommandCancelRequested":
+        return (
+            f"Execution command cancel requested from {event.get('source')}: "
+            f"{event.get('command_id')} ({event.get('reason')})"
+        )
+    if event_type == "ExecutionCommandCancelled":
+        return (
+            f"Execution command cancelled from {event.get('source')}: "
+            f"{event.get('command_id')} ({event.get('reason')})"
+        )
     if event_type == "ExecutionCommandRetry":
         return (
             f"Execution command retry after {event.get('failed_command_id')}: "
