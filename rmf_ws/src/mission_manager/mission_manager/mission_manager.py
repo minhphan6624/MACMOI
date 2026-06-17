@@ -3,6 +3,7 @@ from enum import Enum
 
 from .execution import ExecutionCommand, ExecutionCommandType, ExecutionManager
 from .mission_events import (
+    ExecutionCommandCancelled,
     ExecutionCommandCompleted,
     ExecutionCommandFailed,
     MissionStartRequested,
@@ -75,6 +76,8 @@ class MissionManager:
             return self._handle_command_completed(event)
         if isinstance(event, ExecutionCommandFailed):
             return self._handle_command_failed(event)
+        if isinstance(event, ExecutionCommandCancelled):
+            return self._handle_command_cancelled(event)
         if isinstance(event, OperatorPauseRequested):
             return self._handle_operator_pause_requested(event)
         if isinstance(event, OperatorResumeRequested):
@@ -93,6 +96,7 @@ class MissionManager:
 
         return self._advance()
 
+    # ----- handlers for ExecutionCommand events -----
     def _handle_command_completed(
         self,
         event: ExecutionCommandCompleted,
@@ -108,6 +112,16 @@ class MissionManager:
 
         task = self.runtime.tasks.get(command.task_id)
         if task is None:
+            return []
+
+        if self.runtime.status in (MissionStatus.PAUSED, MissionStatus.ABORTED):
+            self.task_runner.handle_command_succeeded_without_followup(task, command)
+            if self.runtime.status == MissionStatus.PAUSED:
+                task.status = MissionTaskStatus.RUNNING
+                task.next_expected_event = "operator resume"
+            else:
+                task.status = MissionTaskStatus.CANCELLED
+                task.next_expected_event = None
             return []
 
         commands = self.task_runner.handle_command_succeeded(task, command)
@@ -171,6 +185,45 @@ class MissionManager:
         self.runtime.status = MissionStatus.FAILED
         return []
 
+    def _handle_command_cancelled(
+        self,
+        event: ExecutionCommandCancelled,
+    ) -> list[ExecutionCommand]:
+        command_id = event.command_id
+        reason = event.reason
+
+        if command_id not in self.execution_manager.commands:
+            return []
+
+        command = self.execution_manager.commands[command_id]
+        if not self.execution_manager.mark_cancelled(command_id, reason):
+            return []
+
+        task = self.runtime.tasks.get(command.task_id)
+        if task is None:
+            return []
+
+        if task.active_command_id == command_id:
+            task.active_command_id = None
+
+        if reason == "operator_pause":
+            task.status = MissionTaskStatus.RUNNING
+            task.next_expected_event = "operator resume"
+            return []
+
+        if reason == "operator_abort":
+            task.status = MissionTaskStatus.CANCELLED
+            task.next_expected_event = None
+            return []
+
+        task.status = MissionTaskStatus.FAILED
+        task.blocked_reason = reason
+        task.blocked_by = command.robot_id
+        task.next_expected_event = "operator intervention"
+        self.runtime.status = MissionStatus.FAILED
+        return []
+
+    # ---- Handlers for operator commands 
     def _handle_operator_pause_requested(
         self,
         event: OperatorPauseRequested,
@@ -199,8 +252,14 @@ class MissionManager:
             MissionStatus.FAILED,
         ):
             self.runtime.status = MissionStatus.ABORTED
+            for task in self.runtime.tasks.values():
+                if task.status == MissionTaskStatus.SUCCEEDED:
+                    continue
+                task.status = MissionTaskStatus.CANCELLED
+                task.next_expected_event = None
         return []
 
+    
     @classmethod
     def create_default(
         cls,
