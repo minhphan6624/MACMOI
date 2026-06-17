@@ -4,7 +4,6 @@ from dataclasses import dataclass
 @dataclass
 class MissionStartRequested:
     """Request to start the current mission."""
-
     source: str = "operator"
 
 
@@ -28,6 +27,7 @@ class OperatorAbortRequested:
 
     source: str = "operator"
 
+# ----- Execution command events -----
 
 @dataclass
 class ExecutionCommandCompleted:
@@ -56,6 +56,7 @@ class ExecutionCommandRetry:
     retry_command_ids: list[str]
     reason: str
 
+# ---- Event for When an RMF task is completed -----
 
 @dataclass
 class RmfTaskSummaryCompleted:

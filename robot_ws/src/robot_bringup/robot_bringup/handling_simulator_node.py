@@ -5,47 +5,35 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from turtlebot3_msgs.srv import Sound
 
-
-MISSION_EXECUTION_COMMANDS_TOPIC = "mission_execution_commands"
-MISSION_EXECUTION_RESULTS_TOPIC = "mission_execution_results"
 SOUND_BUTTON1 = 4
 SOUND_BUTTON2 = 5
-
 
 class HandlingSimulatorNode(Node):
     def __init__(self):
         super().__init__("handling_simulator")
 
+        # Params
         self.declare_parameter("robot_id", "")
         self.declare_parameter("mission_id", "")
         self.declare_parameter("handling_duration_sec", 5.0)
 
+        # Pubs, subs and clients
+        self.result_pub = self.create_publisher(String,"mission_execution_results",10,)
+        
+        self.create_subscription(String, "mission_execution_commands",self._handle_command,10,)
+        
+        self.sound_client = self.create_client(Sound, "sound")
+
+        # Extract param values
         self.robot_id = self.get_parameter("robot_id").value
         self.mission_id = self.get_parameter("mission_id").value
-        self.handling_duration_sec = float(
-            self.get_parameter("handling_duration_sec").value
-        )
-
-        self.result_pub = self.create_publisher(
-            String,
-            MISSION_EXECUTION_RESULTS_TOPIC,
-            10,
-        )
-        self.create_subscription(
-            String,
-            MISSION_EXECUTION_COMMANDS_TOPIC,
-            self._handle_command,
-            10,
-        )
-        self.sound_client = self.create_client(Sound, "sound")
+        self.handling_duration_sec = float(self.get_parameter("handling_duration_sec").value)
 
         self.active_timers = {}
         self.completed_command_ids = set()
         self.sound_unavailable_logged = False
 
-        self.get_logger().info(
-            f"Handling simulator ready for robot_id={self.robot_id}"
-        )
+        self.get_logger().info(f"Handling simulator ready for robot_id={self.robot_id}")
 
     def _handle_command(self, msg: String) -> None:
         try:
@@ -54,10 +42,13 @@ class HandlingSimulatorNode(Node):
             self.get_logger().warning(f"Invalid execution command JSON: {msg.data}")
             return
 
+        # ----- Validation -----
         if command.get("command_type") != "handle_item":
             return
+        
         if command.get("robot_id") != self.robot_id:
             return
+        
         if self.mission_id and command.get("mission_id") != self.mission_id:
             return
 
@@ -69,6 +60,7 @@ class HandlingSimulatorNode(Node):
         if command_id in self.active_timers or command_id in self.completed_command_ids:
             return
 
+        # ----- Handling starts -----
         self.get_logger().info(
             f"Simulating {command.get('handling_type')} for item "
             f"{command.get('item_id')} on {self.robot_id}"
