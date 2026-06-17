@@ -33,18 +33,6 @@ from .mission_events import (
 from .mission_manager import MissionManager
 from .rmf_adapter import RmfAdapter
 
-
-TASK_API_REQUESTS_TOPIC = "task_api_requests"
-TASK_API_RESPONSES_TOPIC = "task_api_responses"
-TASK_SUMMARIES_TOPIC = "task_summaries"
-MISSION_STATE_TOPIC = "mission_state"
-MISSION_DEBUG_STATE_TOPIC = "mission_debug_state"
-MISSION_EVENTS_TOPIC = "mission_events"
-OPERATOR_COMMANDS_TOPIC = "mission_commands"
-MISSION_EXECUTION_COMMANDS_TOPIC = "mission_execution_commands"
-MISSION_EXECUTION_RESULTS_TOPIC = "mission_execution_results"
-
-
 class MissionManagerNode(Node):
     """ROS node that connects mission logic to RMF, Free Fleet, and topics."""
 
@@ -79,57 +67,23 @@ class MissionManagerNode(Node):
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
-        self.api_request_pub = self.create_publisher(
-            ApiRequest,
-            TASK_API_REQUESTS_TOPIC,
-            qos,
-        )
-        self.create_subscription(
-            ApiResponse,
-            TASK_API_RESPONSES_TOPIC,
-            self._handle_api_response,
-            qos,
-        )
-        self.create_subscription(
-            TaskSummary,
-            TASK_SUMMARIES_TOPIC,
-            self._handle_task_summaries,
-            10,
-        )
-        self.mission_state_pub = self.create_publisher(
-            String,
-            MISSION_STATE_TOPIC,
-            qos,
-        )
-        self.mission_debug_state_pub = self.create_publisher(
-            String,
-            MISSION_DEBUG_STATE_TOPIC,
-            qos,
-        )
-        self.mission_events_pub = self.create_publisher(
-            String,
-            MISSION_EVENTS_TOPIC,
-            events_qos,
-        )
-
-        self.create_subscription(
-            String,
-            OPERATOR_COMMANDS_TOPIC,
-            self._handle_operator_command,
-            10,
-        )
-        self.execution_command_pub = self.create_publisher(
-            String,
-            MISSION_EXECUTION_COMMANDS_TOPIC,
-            10,
-        )
-        self.create_subscription(
-            String,
-            MISSION_EXECUTION_RESULTS_TOPIC,
-            self._handle_execution_result,
-            10,
-        )
-
+        self.api_request_pub = self.create_publisher(ApiRequest, "task_api_requests",qos,)
+        
+        # ---- Subscribers -----
+        self.create_subscription(ApiResponse, "task_api_responses", self._handle_api_response,qos)
+        self.create_subscription(TaskSummary, "task_summaries", self._handle_task_summaries,10)
+        self.create_subscription(String, "mission_commands", self._handle_operator_command,10)
+        
+        self.create_subscription(String,"mission_execution_results",self._handle_execution_result,10,)
+        
+        # ----- Publishers -----
+        
+        self.mission_state_pub = self.create_publisher(String,"mission_state",qos,)
+        self.mission_debug_state_pub = self.create_publisher(String,"mission_debug_state",qos,)
+        self.mission_events_pub = self.create_publisher(String,"mission_events",events_qos,)
+        
+        self.execution_command_pub = self.create_publisher(String,"mission_execution_commands",10,)
+        
         self.rmf_adapter = RmfAdapter(
             mission_id=mission_id,
             publish_request=self._publish_api_request,
@@ -179,12 +133,7 @@ class MissionManagerNode(Node):
             )
         self._publish_mission_state()
 
-    def _process_execution_completed(
-        self,
-        command_id: str,
-        source: str,
-        rmf_task_id: str | None = None,
-    ) -> list[ExecutionCommand]:
+    def _process_execution_completed( self, command_id: str, source: str, rmf_task_id: str | None = None,) -> list[ExecutionCommand]:
         """Record command completion and let mission logic advance."""
 
         event = ExecutionCommandCompleted(command_id, source, rmf_task_id)
