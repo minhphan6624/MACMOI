@@ -21,6 +21,8 @@ from .mission_serializer import (
     serialize_mission_state,
 )
 from .mission_events import (
+    ExecutionCommandCancelled,
+    ExecutionCommandCancelRequested,
     ExecutionCommandCompleted,
     ExecutionCommandFailed,
     ExecutionCommandRetry,
@@ -172,6 +174,12 @@ class MissionManagerNode(Node):
         if event is not None:
             self._record_event(event)
             self._dispatch_commands(self.mission_manager.handle_event(event))
+            if isinstance(event, (OperatorPauseRequested, OperatorAbortRequested)):
+                self._request_active_move_cancellations(
+                    "operator_pause"
+                    if isinstance(event, OperatorPauseRequested)
+                    else "operator_abort"
+                )
             return
 
         self.get_logger().warning(f"Unsupported operator command: {command}")
@@ -244,7 +252,23 @@ class MissionManagerNode(Node):
             self._dispatch_commands(commands)
             return
 
-        if status in ("FAILED", "CANCELLED"):
+        if status == "CANCELLED":
+            reason = (
+                result.get("cancel_reason")
+                or result.get("error")
+                or "CANCELLED"
+            )
+            self._remove_active_handling_command(command_id)
+            commands = self._process_execution_cancelled(
+                command_id,
+                reason,
+                result.get("source", "execution_result"),
+                self._execution_failure_details(command, result),
+            )
+            self._dispatch_after_execution_cancellation(commands)
+            return
+
+        if status == "FAILED":
             error = result.get("error") or status
             self._remove_active_handling_command(command_id)
             commands = self._process_execution_failed(
@@ -254,6 +278,49 @@ class MissionManagerNode(Node):
                 self._execution_failure_details(command, result),
             )
             self._dispatch_after_execution_failure(command_id, error, commands)
+
+    def _process_execution_cancelled(
+        self,
+        command_id: str,
+        reason: str,
+        source: str,
+        details: dict | None = None,
+    ) -> list[ExecutionCommand]:
+        """Record command cancellation and let mission logic update runtime state."""
+
+        event = ExecutionCommandCancelled(command_id, reason, source, details)
+        self._record_event(event)
+        return self.mission_manager.handle_event(event)
+
+    def _request_active_move_cancellations(self, reason: str) -> None:
+        for command in self._active_execution_commands():
+            if command.command_type != ExecutionCommandType.MOVE_ROBOT:
+                continue
+            self._record_event(
+                ExecutionCommandCancelRequested(
+                    command.command_id,
+                    reason,
+                    "mission_manager_node",
+                    {
+                        "robot_id": command.robot_id,
+                        "target": command.target,
+                    },
+                )
+            )
+            self._publish_execution_cancel_request(command, reason)
+        self._publish_mission_state()
+
+    def _active_execution_commands(self) -> list[ExecutionCommand]:
+        return [
+            command
+            for command in self.mission_manager.execution_manager.commands.values()
+            if command.status
+            not in (
+                ExecutionCommandStatus.SUCCEEDED,
+                ExecutionCommandStatus.FAILED,
+                ExecutionCommandStatus.CANCELLED,
+            )
+        ]
 
     def _remove_active_handling_command(self, command_id: str) -> None:
         """ Clean up active package handling commands"""
@@ -280,6 +347,15 @@ class MissionManagerNode(Node):
             self._dispatch_commands(commands)
             return
         
+        self._publish_mission_state()
+
+    def _dispatch_after_execution_cancellation(
+        self,
+        commands: list[ExecutionCommand],
+    ) -> None:
+        if commands:
+            self._dispatch_commands(commands)
+            return
         self._publish_mission_state()
 
     def _move_completion_failure(self, command: ExecutionCommand, result: dict,) -> tuple[str, dict] | None:
@@ -430,6 +506,24 @@ class MissionManagerNode(Node):
             payload["handling_type"] = command.handling_type
 
         msg.data = json.dumps(payload)
+        self.execution_command_pub.publish(msg)
+
+    def _publish_execution_cancel_request(
+        self,
+        command: ExecutionCommand,
+        reason: str,
+    ) -> None:
+        msg = String()
+        msg.data = json.dumps(
+            {
+                "mission_id": self.mission_manager.runtime.mission_id,
+                "command_id": command.command_id,
+                "task_id": command.task_id,
+                "robot_id": command.robot_id,
+                "command_type": "cancel_move",
+                "cancel_reason": reason,
+            }
+        )
         self.execution_command_pub.publish(msg)
 
 
