@@ -105,6 +105,18 @@ class ExecutionManager:
         command.error = error
         return True
 
+    def mark_cancelled(self, command_id: str, reason: str) -> bool:
+        command = self.commands[command_id]
+        if command.status in (
+            ExecutionCommandStatus.SUCCEEDED,
+            ExecutionCommandStatus.FAILED,
+            ExecutionCommandStatus.CANCELLED,
+        ):
+            return False
+        command.status = ExecutionCommandStatus.CANCELLED
+        command.error = reason
+        return True
+
     def _add_command(self, command: ExecutionCommand) -> ExecutionCommand:
         self.commands[command.command_id] = command
         return command

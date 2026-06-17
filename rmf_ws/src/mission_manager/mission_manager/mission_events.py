@@ -49,6 +49,26 @@ class ExecutionCommandFailed:
 
 
 @dataclass
+class ExecutionCommandCancelRequested:
+    """Cancellation requested for an active execution command."""
+
+    command_id: str
+    reason: str
+    source: str
+    details: dict | None = None
+
+
+@dataclass
+class ExecutionCommandCancelled:
+    """External execution command cancellation event."""
+
+    command_id: str
+    reason: str
+    source: str
+    details: dict | None = None
+
+
+@dataclass
 class ExecutionCommandRetry:
     """Retry commands emitted after an execution command failure."""
 
