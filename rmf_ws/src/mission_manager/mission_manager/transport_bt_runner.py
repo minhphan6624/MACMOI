@@ -85,6 +85,20 @@ class TransportTaskBtRunner:
 
         return self.advance(task)
 
+    def handle_command_succeeded_without_followup(
+        self,
+        task: TransportItemTask,
+        command: ExecutionCommand,
+    ) -> None:
+        """Apply command success but suppress any newly emitted external commands."""
+
+        commands = self.handle_command_succeeded(task, command)
+        
+        for emitted in commands:
+            if task.active_command_id == emitted.command_id:
+                task.active_command_id = None
+            self.execution_manager.commands.pop(emitted.command_id, None)
+
 
 class AssignRobot(BtNode):
     """Claims the task's assigned robot when it is idle."""
