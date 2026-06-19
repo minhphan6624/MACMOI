@@ -5,8 +5,8 @@ from rclpy.node import Node
 from std_msgs.msg import String
 from turtlebot3_msgs.srv import Sound
 
-SOUND_BUTTON1 = 4
-SOUND_BUTTON2 = 5
+SOUND_START = 1
+SOUND_END = 0
 
 class HandlingSimulatorNode(Node):
     def __init__(self):
@@ -16,15 +16,13 @@ class HandlingSimulatorNode(Node):
         self.declare_parameter("robot_id", "")
         self.declare_parameter("mission_id", "")
         self.declare_parameter("handling_duration_sec", 5.0)
-        self.declare_parameter("sound_service", "sound")
 
         # Pubs, subs and clients
         self.result_pub = self.create_publisher(String,"mission_execution_results",10,)
         
         self.create_subscription(String, "mission_execution_commands",self._handle_command,10,)
         
-        sound_service = self.get_parameter("sound_service").value
-        self.sound_client = self.create_client(Sound, sound_service)
+        self.sound_client = self.create_client(Sound, "sound")
 
         # Extract param values
         self.robot_id = self.get_parameter("robot_id").value
@@ -36,9 +34,6 @@ class HandlingSimulatorNode(Node):
         self.sound_unavailable_logged = False
 
         self.get_logger().info(f"Handling simulator ready for robot_id={self.robot_id}")
-        self.get_logger().info(
-            f"Sound cues will use {self.sound_client.service_name}"
-        )
 
     def _handle_command(self, msg: String) -> None:
         try:
@@ -70,7 +65,7 @@ class HandlingSimulatorNode(Node):
             f"Simulating {command.get('handling_type')} for item "
             f"{command.get('item_id')} on {self.robot_id}"
         )
-        self._play_sound(SOUND_BUTTON1)
+        self._play_sound(SOUND_START)
 
         timer_ref = {}
 
@@ -78,22 +73,19 @@ class HandlingSimulatorNode(Node):
             timer_ref["timer"].cancel()
             self.active_timers.pop(command_id, None)
             self.completed_command_ids.add(command_id)
-            self._play_sound(SOUND_BUTTON2)
+            self._play_sound(SOUND_END)
             self._publish_result(command)
 
         timer_ref["timer"] = self.create_timer(self.handling_duration_sec, on_timer)
         self.active_timers[command_id] = timer_ref["timer"]
 
     def _play_sound(self, value: int) -> None:
-        if not self.sound_client.wait_for_service(timeout_sec=1.0):
+        if not self.sound_client.service_is_ready():
             if not self.sound_unavailable_logged:
-                self.get_logger().warning(
-                    f"Sound service {self.sound_client.service_name} is unavailable"
-                )
+                self.get_logger().warning("Sound service is unavailable")
                 self.sound_unavailable_logged = True
             return
 
-        self.sound_unavailable_logged = False
         request = Sound.Request()
         request.value = value
         future = self.sound_client.call_async(request)
