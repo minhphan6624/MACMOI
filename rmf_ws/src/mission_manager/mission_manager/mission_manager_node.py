@@ -21,23 +21,26 @@ from .mission_serializer import (
     serialize_mission_state,
 )
 from .mission_events import (
+    ExecutionCommandCancelled,
+    ExecutionCommandCancelRequested,
     ExecutionCommandCompleted,
     ExecutionCommandFailed,
+    ExecutionCommandRetry,
     MissionStartRequested,
+    OperatorAbortRequested,
+    OperatorPauseRequested,
+    OperatorResumeRequested,
+    RmfTaskSummaryCompleted,
 )
 from .mission_manager import MissionManager
 from .rmf_adapter import RmfAdapter
 
 
-TASK_API_REQUESTS_TOPIC = "task_api_requests"
-TASK_API_RESPONSES_TOPIC = "task_api_responses"
-TASK_SUMMARIES_TOPIC = "task_summaries"
-MISSION_STATE_TOPIC = "mission_state"
-MISSION_DEBUG_STATE_TOPIC = "mission_debug_state"
-MISSION_EVENTS_TOPIC = "mission_events"
-OPERATOR_COMMANDS_TOPIC = "mission_commands"
-MISSION_EXECUTION_COMMANDS_TOPIC = "mission_execution_commands"
-MISSION_EXECUTION_RESULTS_TOPIC = "mission_execution_results"
+TERMINAL_EXECUTION_STATUSES = (
+    ExecutionCommandStatus.SUCCEEDED,
+    ExecutionCommandStatus.FAILED,
+    ExecutionCommandStatus.CANCELLED,
+)
 
 
 class MissionManagerNode(Node):
@@ -74,56 +77,20 @@ class MissionManagerNode(Node):
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
         )
-        self.api_request_pub = self.create_publisher(
-            ApiRequest,
-            TASK_API_REQUESTS_TOPIC,
-            qos,
-        )
-        self.create_subscription(
-            ApiResponse,
-            TASK_API_RESPONSES_TOPIC,
-            self._handle_api_response,
-            qos,
-        )
-        self.create_subscription(
-            TaskSummary,
-            TASK_SUMMARIES_TOPIC,
-            self._handle_task_summaries,
-            10,
-        )
-        self.mission_state_pub = self.create_publisher(
-            String,
-            MISSION_STATE_TOPIC,
-            qos,
-        )
-        self.mission_debug_state_pub = self.create_publisher(
-            String,
-            MISSION_DEBUG_STATE_TOPIC,
-            qos,
-        )
-        self.mission_events_pub = self.create_publisher(
-            String,
-            MISSION_EVENTS_TOPIC,
-            events_qos,
-        )
+        self.api_request_pub = self.create_publisher(ApiRequest, "task_api_requests", qos)
 
-        self.create_subscription(
-            String,
-            OPERATOR_COMMANDS_TOPIC,
-            self._handle_operator_command,
-            10,
-        )
-        self.execution_command_pub = self.create_publisher(
-            String,
-            MISSION_EXECUTION_COMMANDS_TOPIC,
-            10,
-        )
-        self.create_subscription(
-            String,
-            MISSION_EXECUTION_RESULTS_TOPIC,
-            self._handle_execution_result,
-            10,
-        )
+        # ---- Subscribers -----
+        self.create_subscription(ApiResponse, "task_api_responses", self._handle_api_response, qos)
+        self.create_subscription(TaskSummary, "task_summaries", self._handle_task_summaries, 10)
+        self.create_subscription(String, "mission_commands", self._handle_operator_command, 10)
+        self.create_subscription(String, "mission_execution_results", self._handle_execution_result, 10)
+
+        # ----- Publishers -----
+
+        self.mission_state_pub = self.create_publisher(String, "mission_state", qos)
+        self.mission_debug_state_pub = self.create_publisher(String, "mission_debug_state", qos)
+        self.mission_events_pub = self.create_publisher(String, "mission_events", events_qos)
+        self.execution_command_pub = self.create_publisher(String, "mission_execution_commands", 10)
 
         self.rmf_adapter = RmfAdapter(
             mission_id=mission_id,
@@ -170,45 +137,19 @@ class MissionManagerNode(Node):
             if command_id is None:
                 continue
             self._record_event(
-                {
-                    "type": "RmfTaskSummaryCompleted",
-                    "command_id": command_id,
-                    "rmf_task_id": task_state.task_id,
-                    "source": "task_summary",
-                    "message": (
-                        "RMF task summary completed; waiting for "
-                        "Nav2 arrival result before advancing mission"
-                    ),
-                }
+                RmfTaskSummaryCompleted(command_id, task_state.task_id)
             )
         self._publish_mission_state()
 
-    def _process_execution_completed(
-        self,
-        command_id: str,
-        source: str,
-        rmf_task_id: str | None = None,
-    ) -> list[ExecutionCommand]:
-        """Record command completion and let mission logic advance."""
+    def _process_execution_event(self, event) -> list[ExecutionCommand]:
+        """Record an execution event and let mission logic update state."""
 
-        event = ExecutionCommandCompleted(command_id, source, rmf_task_id)
         self._record_event(event)
-        self.get_logger().info(
-            f"Execution command completed from {source}: {command_id}"
-        )
-        return self.mission_manager.handle_event(event)
-
-    def _process_execution_failed(
-        self,
-        command_id: str,
-        error: str,
-        source: str,
-        details: dict | None = None,
-    ) -> list[ExecutionCommand]:
-        """Record command failure and let mission logic retry or fail the task."""
-
-        event = ExecutionCommandFailed(command_id, error, source, details)
-        self._record_event(event)
+        if isinstance(event, ExecutionCommandCompleted):
+            self.get_logger().info(
+                f"Execution command completed from {event.source}: "
+                f"{event.command_id}"
+            )
         return self.mission_manager.handle_event(event)
 
     def _handle_operator_command(self, msg: String) -> None:
@@ -223,13 +164,30 @@ class MissionManagerNode(Node):
         if command.get("mission_id") != self.mission_manager.runtime.mission_id:
             return
 
-        if command.get("command") == "start":
-            event = MissionStartRequested(source="operator")
+        event = self._operator_event(command.get("command"))
+        if event is not None:
             self._record_event(event)
             self._dispatch_commands(self.mission_manager.handle_event(event))
+            if isinstance(event, (OperatorPauseRequested, OperatorAbortRequested)):
+                self._request_active_move_cancellations(
+                    "operator_pause"
+                    if isinstance(event, OperatorPauseRequested)
+                    else "operator_abort"
+                )
             return
 
         self.get_logger().warning(f"Unsupported operator command: {command}")
+
+    def _operator_event(self, command: str | None):
+        if command == "start":
+            return MissionStartRequested(source="operator")
+        if command == "pause":
+            return OperatorPauseRequested(source="operator")
+        if command == "resume":
+            return OperatorResumeRequested(source="operator")
+        if command == "abort":
+            return OperatorAbortRequested(source="operator")
+        return None
 
     def _handle_execution_result(self, msg: String) -> None:
         """Handle direct execution results from the Free Fleet/Nav2 side channel."""
@@ -249,27 +207,19 @@ class MissionManagerNode(Node):
             return
 
         command = self.mission_manager.execution_manager.commands.get(command_id)
-        if command is None or command.status in (
-            ExecutionCommandStatus.SUCCEEDED,
-            ExecutionCommandStatus.FAILED,
-            ExecutionCommandStatus.CANCELLED,
-        ):
+        if command is None or command.status in TERMINAL_EXECUTION_STATUSES:
             return
 
         status = result.get("status")
+        source = result.get("source", "execution_result")
         if status == "SUCCEEDED":
 
             if command.command_type == ExecutionCommandType.MOVE_ROBOT:
-                
-                # Get failure details if a move command is rejected
                 failure = self._move_completion_failure(command, result)
                 if failure is not None:
                     error, details = failure
-                    commands = self._process_execution_failed(
-                        command_id,
-                        error,
-                        result.get("source", "execution_result"),
-                        details,
+                    commands = self._process_execution_event(
+                        ExecutionCommandFailed(command_id, error, source, details)
                     )
                     self._dispatch_after_execution_failure(
                         command_id,
@@ -280,56 +230,79 @@ class MissionManagerNode(Node):
 
             self._remove_active_handling_command(command_id)
 
-            commands = self._process_execution_completed(
-                command_id,
-                result.get("source", "execution_result"),
-                result.get("rmf_task_id"),
+            commands = self._process_execution_event(
+                ExecutionCommandCompleted(command_id, source, result.get("rmf_task_id"))
             )
             self._dispatch_commands(commands)
             return
 
-        if status in ("FAILED", "CANCELLED"):
+        if status == "CANCELLED":
+            reason = (
+                result.get("cancel_reason")
+                or result.get("error")
+                or "CANCELLED"
+            )
+            self._remove_active_handling_command(command_id)
+            commands = self._process_execution_event(
+                ExecutionCommandCancelled(command_id, reason, source, self._execution_failure_details(command, result))
+            )
+            self._dispatch_commands(commands)
+            return
+
+        if status == "FAILED":
             error = result.get("error") or status
             self._remove_active_handling_command(command_id)
-            commands = self._process_execution_failed(
-                command_id,
-                error,
-                result.get("source", "execution_result"),
-                self._execution_failure_details(command, result),
+            commands = self._process_execution_event(
+                ExecutionCommandFailed(command_id, error, source, self._execution_failure_details(command, result))
             )
             self._dispatch_after_execution_failure(command_id, error, commands)
 
+    def _request_active_move_cancellations(self, reason: str) -> None:
+        for command in self._active_execution_commands():
+            if command.command_type != ExecutionCommandType.MOVE_ROBOT:
+                continue
+            self._record_event(
+                ExecutionCommandCancelRequested(
+                    command.command_id,
+                    reason,
+                    "mission_manager_node",
+                    {
+                        "robot_id": command.robot_id,
+                        "target": command.target,
+                    },
+                )
+            )
+            self._publish_execution_cancel_request(command, reason)
+        self._publish_mission_state()
+
+    def _active_execution_commands(self) -> list[ExecutionCommand]:
+        return [
+            command
+            for command in self.mission_manager.execution_manager.commands.values()
+            if command.status not in TERMINAL_EXECUTION_STATUSES
+        ]
+
     def _remove_active_handling_command(self, command_id: str) -> None:
-        """ Clean up active package handling commands"""
+        """Clean up active package handling commands."""
         self.active_handling_commands = [
             command
             for command in self.active_handling_commands
             if command.get("command_id") != command_id
         ]
 
-    def _dispatch_after_execution_failure(
-        self,
-        failed_command_id: str,
-        reason: str,
-        commands: list[ExecutionCommand],
-    ) -> None:
+    def _dispatch_after_execution_failure(self,failed_command_id: str,reason: str,
+                                          commands: list[ExecutionCommand],) -> None:
         if commands:
             self._record_event(
-                {
-                    "type": "ExecutionCommandRetry",
-                    "failed_command_id": failed_command_id,
-                    "retry_command_ids": [
-                        command.command_id for command in commands
-                    ],
-                    "reason": reason,
-                }
+                ExecutionCommandRetry(
+                    failed_command_id,
+                    [command.command_id for command in commands],
+                    reason,
+                )
             )
-            self._dispatch_commands(commands)
-            return
-        
-        self._publish_mission_state()
+        self._dispatch_commands(commands)
 
-    def _move_completion_failure(self, command: ExecutionCommand, result: dict,) -> tuple[str, dict] | None:
+    def _move_completion_failure(self,command: ExecutionCommand,result: dict,) -> tuple[str, dict] | None:
         """Return failure details if a reported move success should be rejected."""
 
         source = result.get("source", "execution_result")
@@ -351,11 +324,7 @@ class MissionManagerNode(Node):
 
         return None
 
-    def _execution_failure_details(
-        self,
-        command: ExecutionCommand,
-        result: dict,
-    ) -> dict:
+    def _execution_failure_details(self,command: ExecutionCommand,result: dict,) -> dict:
         details = {
             "robot_id": command.robot_id,
             "target": command.target,
@@ -385,7 +354,6 @@ class MissionManagerNode(Node):
             elif command.command_type == ExecutionCommandType.HANDLE_ITEM:
                 self._publish_execution_command(command)
                 # Expose the outstanding robot-side handling command in mission_debug_state.
-                
                 self.active_handling_commands.append(
                     {
                         "command_id": command.command_id,
@@ -416,9 +384,7 @@ class MissionManagerNode(Node):
         self.recent_events.append(event_dict)
         self.recent_events = self.recent_events[-20:]
 
-        msg = String()
-        msg.data = json.dumps(event_dict)
-        self.mission_events_pub.publish(msg)
+        self._publish_json(self.mission_events_pub, event_dict)
 
     def _record_action(self, action) -> None:
         action_dict = action_to_dict(action)
@@ -429,19 +395,17 @@ class MissionManagerNode(Node):
     def _publish_mission_state(self) -> None:
         """Publish the current serialized mission state."""
 
-        msg = String()
-        msg.data = json.dumps(
+        self._publish_json(
+            self.mission_state_pub,
             serialize_mission_state(
                 self.mission_manager,
                 self.rmf_adapter,
                 self.last_event,
-            )
+            ),
         )
 
-        self.mission_state_pub.publish(msg)
-
-        debug_msg = String()
-        debug_msg.data = json.dumps(
+        self._publish_json(
+            self.mission_debug_state_pub,
             serialize_mission_debug_state(
                 self.mission_manager,
                 self.rmf_adapter,
@@ -454,20 +418,11 @@ class MissionManagerNode(Node):
                 },
             )
         )
-        self.mission_debug_state_pub.publish(debug_msg)
 
     def _publish_execution_command(self, command: ExecutionCommand) -> None:
         """Publish command context for external execution result producers."""
 
-        msg = String()
-
-        payload = {
-            "mission_id": self.mission_manager.runtime.mission_id,
-            "command_id": command.command_id,
-            "task_id": command.task_id,
-            "robot_id": command.robot_id,
-            "command_type": command.command_type.value,
-        }
+        payload = self._execution_command_payload(command, command.command_type.value)
 
         if command.target is not None:
             payload["target"] = command.target
@@ -476,8 +431,38 @@ class MissionManagerNode(Node):
         if command.handling_type is not None:
             payload["handling_type"] = command.handling_type
 
+        self._publish_json(self.execution_command_pub, payload)
+
+    def _publish_execution_cancel_request(
+        self,
+        command: ExecutionCommand,
+        reason: str,
+    ) -> None:
+        self._publish_json(
+            self.execution_command_pub,
+            {
+                **self._execution_command_payload(command, "cancel_move"),
+                "cancel_reason": reason,
+            },
+        )
+
+    def _execution_command_payload(
+        self,
+        command: ExecutionCommand,
+        command_type: str,
+    ) -> dict:
+        return {
+            "mission_id": self.mission_manager.runtime.mission_id,
+            "command_id": command.command_id,
+            "task_id": command.task_id,
+            "robot_id": command.robot_id,
+            "command_type": command_type,
+        }
+
+    def _publish_json(self, publisher, payload: dict) -> None:
+        msg = String()
         msg.data = json.dumps(payload)
-        self.execution_command_pub.publish(msg)
+        publisher.publish(msg)
 
 
 def main(args=None):

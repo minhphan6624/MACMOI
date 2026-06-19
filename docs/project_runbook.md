@@ -98,11 +98,8 @@ colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
 source install/setup.bash
 ```
 
-Helper equivalent from the project root:
+Helper equivalent from the project root `scripts/build-rmf.sh`
 
-```bash
-scripts/build-rmf.sh
-```
 
 Build `robot_ws` on each robot PC if it has not already been built:
 
@@ -112,6 +109,8 @@ source /opt/ros/jazzy/setup.bash
 colcon build --symlink-install
 source install/setup.bash
 ```
+
+If only a few packages are needed to rebuilt, use `--packages-select <package name>` cli arg in the build command
 
 Install web dependencies only if you plan to use the web UI:
 
@@ -266,18 +265,9 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ros2 launch rmf_bringup system.launch.py
 ```
 
-Helper equivalent from the project root:
+Helper equivalent from the project root: `scripts/launch-rmf.sh`
 
-```bash
-scripts/launch-rmf.sh
-```
-
-Healthy startup should add both robots to fleet `tb3_lab`, with chargers:
-
-```text
-tb3_1 -> robot1_home
-tb3_2 -> robot2_home
-```
+Healthy startup should add both robots to fleet `tb3_lab` at their respective chargers
 
 ## 2.4. Run The Mission Manager
 
@@ -676,64 +666,6 @@ Use patrol tasks only when you intentionally want loop/patrol semantics. The
 mission layer uses composed `go_to_place` requests for one-shot movement
 commands.
 
-## 5.4. Mission Runtime Checks
-
-```bash
-cd MACMOI
-source /opt/ros/jazzy/setup.bash
-source rmf_ws/.venv/bin/activate
-source rmf_ws/install/setup.bash
-
-PYTHONPATH=rmf_ws/src/mission_manager \
-python3 -m py_compile rmf_ws/src/mission_manager/mission_manager/*.py
-```
-
-Run a one-package runtime smoke check without ROS:
-
-```bash
-PYTHONPATH=rmf_ws/src/mission_manager python3 - <<'PY'
-from mission_manager.mission_manager import MissionManager
-
-orch = MissionManager.create_default("smoke", 1)
-commands = orch.start()
-while commands:
-    commands = orch.complete_command(commands[0].command_id)
-
-print(orch.runtime.status.value)
-print(orch.runtime.world.items["P1"].location)
-PY
-```
-
-Expected output:
-
-```text
-COMPLETED
-destination
-```
-
-## 5.5. Debug Fleet Adapter Segfaults
-
-Run this while RMF core is already running:
-
-```bash
-source /opt/ros/jazzy/setup.bash
-source .venv/bin/activate
-source install/setup.bash
-export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-
-gdb --args python3 \
-  $(ros2 pkg prefix free_fleet_adapter)/lib/free_fleet_adapter/fleet_adapter.py \
-  -c src/macmoi_free_fleet_bringup/config/fleet/aiml_lab_multi_tb3_fleet.yaml \
-  -n src/macmoi_assets/nav_graphs/0.yaml
-```
-
-In `gdb`:
-
-```gdb
-run
-bt
-```
-
 # 6. Asset Maintenance
 
 ## 6.1. Regenerate The RMF Nav Graph
@@ -752,22 +684,9 @@ ros2 run rmf_building_map_tools building_map_generator nav \
   src/macmoi_assets/nav_graphs
 ```
 
-Then rebuild the bringup packages:
+Then rebuild and re-source the bringup packages (macmoi_assets and macmoi_free_fleet_bringup). See section [1.3](#13-build-workspaces) for commands
 
-```bash
-cd rmf_ws
-source /opt/ros/jazzy/setup.bash
-source .venv/bin/activate
-
-colcon build --packages-select rmf_bringup macmoi_assets macmoi_free_fleet_bringup --symlink-install
-source install/setup.bash
-```
-
-Helper equivalent from the project root:
-
-```bash
-scripts/regenerate-nav-graph.sh
-```
+Helper equivalent from the project root:`scripts/regenerate-nav-graph.sh`
 
 ## 6.2. Update Reference Coordinates
 
@@ -784,14 +703,6 @@ points must be matching Nav2 `map` coordinates.
 
 After editing, rebuild `macmoi_free_fleet_bringup`:
 
-```bash
-cd rmf_ws
-source /opt/ros/jazzy/setup.bash
-source .venv/bin/activate
-
-colcon build --packages-select macmoi_free_fleet_bringup --symlink-install
-source install/setup.bash
-```
 
 # Start simulated handling node
 ```bash

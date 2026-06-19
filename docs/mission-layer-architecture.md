@@ -34,13 +34,14 @@ The active runtime path is:
 
 ```text
 MissionManagerNode
-  -> MissionManager
-  -> TransportTaskScheduler
-  -> TransportTaskBtRunner
-  -> ExecutionManager
-  -> RmfAdapter / robot handling simulator
-  -> execution completion
-  -> MissionManager
+  -> mission event
+  -> MissionManager.handle_event(...)
+  -> MissionManager._advance()
+  -> TransportTaskScheduler / TransportTaskBtRunner
+  -> ExecutionManager command creation
+  -> RmfAdapter / mission execution command topics
+  -> execution result event
+  -> MissionManager.handle_event(...)
 ```
 
 The main split is:
@@ -86,8 +87,8 @@ resources.py                  resource state model
 execution.py                  execution command lifecycle
 rmf_adapter.py                RMF task API adapter for movement commands
 mission_serializer.py         mission_state JSON serialization
-robot_bringup/handling_simulator_node.py
-                             robot-side simulated load/unload confirmation
+free_fleet_adapter/nav2_robot_adapter.py
+                             robot-side move result and arrival verification
 ```
 
 ---
@@ -168,7 +169,9 @@ mutexes help the physical movement respect that decision.
 
 ## Mission Orchestrator
 
-`mission_manager.py` owns the mission runtime.
+`mission_manager.py` owns the mission runtime and mission lifecycle. It is the
+pure mission-control component: it does not publish ROS messages or submit RMF
+requests directly.
 
 `MissionRuntime` holds:
 
@@ -182,25 +185,34 @@ MissionWorld
 Main behavior:
 
 ```text
-start()
+handle_event(MissionStartRequested)
   set READY -> RUNNING
-  tick()
+  call _advance()
 
-tick()
+handle_event(ExecutionCommandCompleted)
+  mark command succeeded
+  let BT runner update world state for that command
+  call _advance()
+
+handle_event(ExecutionCommandFailed)
+  mark command failed
+  retry arrival_not_verified move failures up to the configured limit
+  otherwise fail the task and mission
+
+handle_event(ExecutionCommandCancelled)
+  mark command cancelled
+  keep paused tasks resumable, or cancel aborted tasks
+
+_advance()
   if all tasks succeeded, mark mission COMPLETED
   advance any RUNNING or BLOCKED task
   otherwise ask scheduler for a ready PENDING task
   start the selected task through the BT runner
-
-complete_command(command_id)
-  mark command succeeded
-  let BT runner update world state
-  advance the task
-  optionally start another ready task
 ```
 
-The mission manager does not publish ROS messages or RMF requests directly. It
-returns `ExecutionCommand` objects to the ROS node.
+The mission manager returns `ExecutionCommand` objects to the ROS node. The node
+is responsible for dispatching those commands and recording/publishing mission
+state after each event.
 
 ---
 
@@ -214,8 +226,8 @@ Current readiness checks:
 task.status == PENDING
 task.robot_id is assigned
 assigned robot is IDLE
-item is physically at task.pickup
-managed pickup resource is available
+item is physically at task.pickup, or the task can pre-stage while waiting
+managed pickup resource is available when the item is already there
 ```
 
 There is one pre-staging exception: a task may start early if its pickup is a
@@ -309,7 +321,7 @@ dropoff into transfer:
   no other active lease holder
   robot slot must be available
   package slot must be available
-  item_id must be present
+  item_id must be provided
 
 pickup from transfer:
   no other active lease holder
@@ -340,8 +352,9 @@ status = BLOCKED
 ```
 
 The BT handles `WAIT` by moving the robot to its directional wait waypoint,
-marking the task as blocked, and retrying resource access when the mission
-advances.
+then marking the task as blocked once it reaches that wait point. If no wait
+waypoint is available, the task is marked blocked immediately. The mission
+retries resource access when a later event causes mission advancement.
 
 The resource state tracks:
 
@@ -467,7 +480,8 @@ MOVE_ROBOT:
 
 HANDLE_ITEM:
   publish mission_execution_commands context
-  wait for robot-side handling result
+  mark command submitted/running
+  wait for a mission_execution_results message
 ```
 
 `RmfAdapter` converts movement commands into RMF
@@ -492,15 +506,16 @@ completed_rmf_task_ids
 
 ## Handling Completion Path
 
-`HANDLE_ITEM` commands are not RMF tasks. The mission manager publishes them on
-`mission_execution_commands` and waits for a robot-side result:
+`HANDLE_ITEM` commands are not RMF tasks. The mission manager publishes command
+context on `mission_execution_commands`, tracks the command as running, and
+waits for a `mission_execution_results` message:
 
 ```text
 MissionManagerNode publishes HANDLE_ITEM command context
-handling_simulator_node filters by robot_id
-handling_simulator_node waits handling_duration_sec
-handling_simulator_node publishes mission_execution_results
-MissionManagerNode calls mission_manager.complete_command(command_id)
+external robot-side/simulation component performs or confirms handling
+external component publishes mission_execution_results
+MissionManagerNode records ExecutionCommandCompleted / Failed / Cancelled
+MissionManager.handle_event(...) advances or fails the task
 ```
 
 The command payload includes:
@@ -515,11 +530,10 @@ item_id
 handling_type = load | unload
 ```
 
-The current simulator always reports `SUCCEEDED` after the configured delay. It
-is a robot-side stand-in for a future actuator, sensor, operator confirmation,
-or simulator-truth confirmation source. During the delay it may call the
-TurtleBot3 `sound` service for observable start/end cues, but sound feedback is
-best-effort and does not decide command success.
+The mission layer does not physically verify load or unload by itself. It
+expects a robot-side, simulator-side, actuator, sensor, or operator-confirmation
+component to publish the result. Only then does the BT update mission-world
+package state.
 
 ---
 
@@ -533,9 +547,10 @@ MissionManagerNode publishes mission_execution_commands
 free_fleet Nav2 adapter attaches the command context to the next navigation goal
 Nav2 reports the goal succeeded
 free_fleet Nav2 adapter computes final_pose, target_pose, and distance_to_target
-free_fleet Nav2 adapter verifies arrival before calling RMF execution.finished()
 free_fleet Nav2 adapter publishes mission_execution_results
-MissionManagerNode calls mission_manager.complete_command(command_id)
+MissionManagerNode validates the result source and arrival_verified flag
+MissionManagerNode records ExecutionCommandCompleted / Failed / Cancelled
+MissionManager.handle_event(...) advances or fails the task
 ```
 
 RMF task summaries are lifecycle/debug events only:
@@ -550,6 +565,11 @@ task_summaries:
 The mission layer no longer completes commands from inferred `/fleet_states`
 pose or mode. It also does not complete movement from RMF task summaries because
 they do not include final pose or verified arrival distance.
+
+The mission node rejects move success unless the result comes from an expected
+Nav2 source and includes `arrival_verified: true`. Failed arrival verification
+is treated as `arrival_not_verified`; the mission manager retries those move
+commands up to its configured retry limit before failing the task.
 
 Expected direct completion logs:
 
@@ -654,14 +674,14 @@ ResourceManager:
   queues, stronger lease arbitration, timeouts
 
 RmfAdapter:
-  cancellation, failure handling, richer RMF task types
+  RMF cancellation support, richer RMF task types
 
 MissionManagerNode:
-  replace robot-side handling simulation with real hardware confirmations
-  strengthen execution-result failure/cancellation handling
+  real hardware confirmations for load/unload
+  richer execution-result validation and recovery
 
 MissionManager:
-  explicit return-home behavior, pause/resume/abort semantics
+  explicit return-home behavior, richer pause/resume/abort semantics
 ```
 
 See `docs/mission_layer_strengthening_suggestions.md` for recommended next

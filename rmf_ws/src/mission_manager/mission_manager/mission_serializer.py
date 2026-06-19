@@ -6,9 +6,11 @@ from .execution import ExecutionCommandStatus, ExecutionCommandType
 from .mission_definition import (
     DESTINATION_WAYPOINT,
     DOWNSTREAM_HOME_WAYPOINT,
+    DOWNSTREAM_WAIT_WAYPOINT,
     SOURCE_WAYPOINT,
     TRANSFER_WAYPOINT,
     UPSTREAM_HOME_WAYPOINT,
+    UPSTREAM_WAIT_WAYPOINT,
 )
 from .mission_tasks import MissionTaskStatus, TransportTaskPhase
 
@@ -22,6 +24,7 @@ MISSION_STATUS_TO_UI = {
     "PAUSED": "paused",
     "COMPLETED": "completed",
     "ABORTED": "cancelled",
+    "FAILED": "failed",
 }
 
 TASK_STATUS_TO_UI = {
@@ -84,8 +87,7 @@ def serialize_mission_state(mission_manager, adapter=None, last_event=None):
 
     runtime = mission_manager.runtime
     world = runtime.world
-    total_packages = len(world.items)
-    delivered_count = _delivered_count(world)
+    
     active_command_ids = _active_command_ids(mission_manager)
     active_task = _active_task(runtime.tasks)
     last_update_time = time()
@@ -171,8 +173,41 @@ def serialize_mission_debug_state(mission_manager, adapter=None, node_debug=None
 
 def _event_message(event: dict) -> str:
     event_type = event.get("type")
+    if event_type == "MissionStartRequested":
+        return f"Mission start requested from {event.get('source')}"
+    if event_type == "OperatorPauseRequested":
+        return f"Mission pause requested from {event.get('source')}"
+    if event_type == "OperatorResumeRequested":
+        return f"Mission resume requested from {event.get('source')}"
+    if event_type == "OperatorAbortRequested":
+        return f"Mission abort requested from {event.get('source')}"
     if event_type == "ExecutionCommandCompleted":
-        return f"Mission command completed from {event.get('source')}: {event.get('command_id')}"
+        return f"Execution command completed from {event.get('source')}: {event.get('command_id')}"
+    if event_type == "ExecutionCommandFailed":
+        return (
+            f"Execution command failed from {event.get('source')}: "
+            f"{event.get('command_id')} ({event.get('error')})"
+        )
+    if event_type == "ExecutionCommandCancelRequested":
+        return (
+            f"Execution command cancel requested from {event.get('source')}: "
+            f"{event.get('command_id')} ({event.get('reason')})"
+        )
+    if event_type == "ExecutionCommandCancelled":
+        return (
+            f"Execution command cancelled from {event.get('source')}: "
+            f"{event.get('command_id')} ({event.get('reason')})"
+        )
+    if event_type == "ExecutionCommandRetry":
+        return (
+            f"Execution command retry after {event.get('failed_command_id')}: "
+            f"{event.get('retry_command_ids')}"
+        )
+    if event_type == "RmfTaskSummaryCompleted":
+        return (
+            "RMF task summary completed; waiting for Nav2 arrival result: "
+            f"{event.get('command_id')}"
+        )
     if event_type == "OperatorCommand":
         return f"Operator command requested: {event.get('command')}"
     if "status" in event and "command_id" in event:
@@ -328,6 +363,18 @@ def _zone_summaries(world) -> list[dict]:
             "id": DESTINATION_WAYPOINT,
             "label": "Destination",
             "type": "dropoff",
+            "status": "available",
+        },
+        {
+            "id": UPSTREAM_WAIT_WAYPOINT,
+            "label": "Upstream Exit",
+            "type": "staging",
+            "status": "available",
+        },
+        {
+            "id": DOWNSTREAM_WAIT_WAYPOINT,
+            "label": "Downstream Exit",
+            "type": "staging",
             "status": "available",
         },
         {
