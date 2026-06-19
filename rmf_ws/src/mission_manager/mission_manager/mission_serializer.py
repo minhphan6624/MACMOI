@@ -6,9 +6,11 @@ from .execution import ExecutionCommandStatus, ExecutionCommandType
 from .mission_definition import (
     DESTINATION_WAYPOINT,
     DOWNSTREAM_HOME_WAYPOINT,
+    DOWNSTREAM_WAIT_WAYPOINT,
     SOURCE_WAYPOINT,
     TRANSFER_WAYPOINT,
     UPSTREAM_HOME_WAYPOINT,
+    UPSTREAM_WAIT_WAYPOINT,
 )
 from .mission_tasks import MissionTaskStatus, TransportTaskPhase
 
@@ -85,8 +87,7 @@ def serialize_mission_state(mission_manager, adapter=None, last_event=None):
 
     runtime = mission_manager.runtime
     world = runtime.world
-    total_packages = len(world.items)
-    delivered_count = _delivered_count(world)
+    
     active_command_ids = _active_command_ids(mission_manager)
     active_task = _active_task(runtime.tasks)
     last_update_time = time()
@@ -362,6 +363,18 @@ def _zone_summaries(world) -> list[dict]:
             "id": DESTINATION_WAYPOINT,
             "label": "Destination",
             "type": "dropoff",
+            "status": "available",
+        },
+        {
+            "id": UPSTREAM_WAIT_WAYPOINT,
+            "label": "Upstream Exit",
+            "type": "staging",
+            "status": "available",
+        },
+        {
+            "id": DOWNSTREAM_WAIT_WAYPOINT,
+            "label": "Downstream Exit",
+            "type": "staging",
             "status": "available",
         },
         {
