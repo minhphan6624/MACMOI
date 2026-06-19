@@ -14,6 +14,7 @@ ssh ubuntu@192.168.50.102
 
 ## Start zenoh brdige on robots
 
+**Namespaced bridges**
 robot1:
 
 ```bash 
@@ -26,6 +27,14 @@ robot2:
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ~/zenoh/bin/zenoh-bridge-ros2dds -c ~/zenoh/config/tb3_robot2_zenoh.json5
 ```
+
+**Non-namespace bridges**
+```bash 
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+~/zenoh/bin/zenoh-bridge-ros2dds -c ~/zenoh/config/robot_mission_topics_zenoh.json5
+```
+
+
 
 ## Bringup robot
 
@@ -86,7 +95,7 @@ source .venv/bin/activate
 source install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 launch rmf_bringup system.launch.py server_uri:=http://localhost:8000/_internal
+ros2 launch rmf_bringup rmf_core.launch.py server_uri:=http://localhost:8000/_internal
 ```
 
 Free-Fleet

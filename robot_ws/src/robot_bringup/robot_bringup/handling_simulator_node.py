@@ -16,13 +16,15 @@ class HandlingSimulatorNode(Node):
         self.declare_parameter("robot_id", "")
         self.declare_parameter("mission_id", "")
         self.declare_parameter("handling_duration_sec", 5.0)
+        self.declare_parameter("sound_service", "sound")
 
         # Pubs, subs and clients
         self.result_pub = self.create_publisher(String,"mission_execution_results",10,)
         
         self.create_subscription(String, "mission_execution_commands",self._handle_command,10,)
         
-        self.sound_client = self.create_client(Sound, "sound")
+        sound_service = self.get_parameter("sound_service").value
+        self.sound_client = self.create_client(Sound, sound_service)
 
         # Extract param values
         self.robot_id = self.get_parameter("robot_id").value
@@ -34,6 +36,9 @@ class HandlingSimulatorNode(Node):
         self.sound_unavailable_logged = False
 
         self.get_logger().info(f"Handling simulator ready for robot_id={self.robot_id}")
+        self.get_logger().info(
+            f"Sound cues will use {self.sound_client.service_name}"
+        )
 
     def _handle_command(self, msg: String) -> None:
         try:
@@ -80,12 +85,15 @@ class HandlingSimulatorNode(Node):
         self.active_timers[command_id] = timer_ref["timer"]
 
     def _play_sound(self, value: int) -> None:
-        if not self.sound_client.service_is_ready():
+        if not self.sound_client.wait_for_service(timeout_sec=1.0):
             if not self.sound_unavailable_logged:
-                self.get_logger().warning("Sound service is unavailable")
+                self.get_logger().warning(
+                    f"Sound service {self.sound_client.service_name} is unavailable"
+                )
                 self.sound_unavailable_logged = True
             return
 
+        self.sound_unavailable_logged = False
         request = Sound.Request()
         request.value = value
         future = self.sound_client.call_async(request)
@@ -100,6 +108,9 @@ class HandlingSimulatorNode(Node):
 
         if not response.success:
             self.get_logger().warning(f"Sound request rejected: {response.message}")
+            return
+
+        self.get_logger().info("Sound cue accepted")
 
     def _publish_result(self, command: dict) -> None:
         msg = String()
