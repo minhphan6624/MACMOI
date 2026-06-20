@@ -117,7 +117,6 @@ source robot_ws/install/setup.bash
 
 ros2 run robot_bringup handling_simulator_node --ros-args \
   -p robot_id:=tb3_1 \
-  -p mission_id:=m1 \
   -p handling_duration_sec:=5.0
 ```
 
@@ -127,7 +126,6 @@ source robot_ws/install/setup.bash
 
 ros2 run robot_bringup handling_simulator_node --ros-args \
   -p robot_id:=tb3_2 \
-  -p mission_id:=m1 \
   -p handling_duration_sec:=5.0
 ```
 

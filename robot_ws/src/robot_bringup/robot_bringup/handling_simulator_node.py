@@ -14,7 +14,6 @@ class HandlingSimulatorNode(Node):
 
         # Params
         self.declare_parameter("robot_id", "")
-        self.declare_parameter("mission_id", "")
         self.declare_parameter("handling_duration_sec", 5.0)
 
         # Pubs, subs and clients
@@ -26,7 +25,6 @@ class HandlingSimulatorNode(Node):
 
         # Extract param values
         self.robot_id = self.get_parameter("robot_id").value
-        self.mission_id = self.get_parameter("mission_id").value
         self.handling_duration_sec = float(self.get_parameter("handling_duration_sec").value)
 
         self.active_timers = {}
@@ -49,9 +47,6 @@ class HandlingSimulatorNode(Node):
         if command.get("robot_id") != self.robot_id:
             return
         
-        if self.mission_id and command.get("mission_id") != self.mission_id:
-            return
-
         command_id = command.get("command_id")
         mission_id = command.get("mission_id")
         if not isinstance(command_id, str) or not isinstance(mission_id, str):
