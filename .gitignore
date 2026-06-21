@@ -7,3 +7,4 @@ __pycache__
 *.pdf
 /web/
 /rmf_ws/src/free_fleet/
+/robot_ws/src/robot_bringup/

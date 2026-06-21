@@ -2,9 +2,14 @@ repositories:
   web:
     type: git
     url: git@github.com:minhphan6624/rmf-web.git
-    version: main-web-demo
+    version: main
 
   rmf_ws/src/free_fleet:
     type: git
     url: git@github.com:minhphan6624/free_fleet.git
-    version: my-patches
+    version: main
+
+  robot_ws/src/robot_bringup:
+    type: git
+    url: git@github.com:minhphan6624/macmoi-tb3-bringup.git
+    version: main
