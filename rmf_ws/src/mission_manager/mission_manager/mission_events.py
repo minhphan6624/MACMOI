@@ -22,6 +22,22 @@ class OperatorResumeRequested:
 
 
 @dataclass
+class OperatorRobotPauseRequested:
+    """Request to pause one robot without pausing the mission."""
+
+    robot_id: str
+    source: str = "operator"
+
+
+@dataclass
+class OperatorRobotResumeRequested:
+    """Request to resume one paused robot."""
+
+    robot_id: str
+    source: str = "operator"
+
+
+@dataclass
 class OperatorAbortRequested:
     """Request to abort the current mission."""
 
