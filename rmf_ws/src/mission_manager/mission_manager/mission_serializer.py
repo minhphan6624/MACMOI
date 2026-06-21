@@ -179,6 +179,10 @@ def _event_message(event: dict) -> str:
         return f"Mission pause requested from {event.get('source')}"
     if event_type == "OperatorResumeRequested":
         return f"Mission resume requested from {event.get('source')}"
+    if event_type == "OperatorRobotPauseRequested":
+        return f"Robot pause requested: {event.get('robot_id')}"
+    if event_type == "OperatorRobotResumeRequested":
+        return f"Robot resume requested: {event.get('robot_id')}"
     if event_type == "OperatorAbortRequested":
         return f"Mission abort requested from {event.get('source')}"
     if event_type == "ExecutionCommandCompleted":
@@ -263,6 +267,7 @@ def _robot_summaries(world, tasks, mission_manager, adapter, last_update_time: f
             "id": robot_id,
             "label": _robot_label(robot_id),
             "mission_state": _robot_mission_state(robot, tasks, mission_manager),
+            "paused": robot.paused,
             "active_task_id": robot.active_task_id,
             "location": robot.location,
             "issue": _robot_issue(robot, tasks),
@@ -280,6 +285,8 @@ def _robot_label(robot_id: str) -> str:
 
 
 def _robot_mission_state(robot, tasks, mission_manager) -> str:
+    if robot.paused:
+        return "paused"
     if robot.active_task_id is None:
         return "idle"
     task = tasks.get(robot.active_task_id)
