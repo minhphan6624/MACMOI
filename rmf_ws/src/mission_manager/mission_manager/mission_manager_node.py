@@ -29,6 +29,8 @@ from .mission_events import (
     MissionStartRequested,
     OperatorAbortRequested,
     OperatorPauseRequested,
+    OperatorRobotPauseRequested,
+    OperatorRobotResumeRequested,
     OperatorResumeRequested,
     RmfTaskSummaryCompleted,
 )
@@ -122,8 +124,13 @@ class MissionManagerNode(Node):
     def _handle_api_response(self, msg: ApiResponse) -> None:
         command_id = self.rmf_adapter.handle_api_response(msg)
         if command_id is not None:
-            self.mission_manager.execution_manager.mark_running(command_id)
-            self.get_logger().info(f"Execution command accepted: {command_id}")
+            command = self.mission_manager.execution_manager.commands.get(command_id)
+            if (
+                command is not None
+                and command.status not in TERMINAL_EXECUTION_STATUSES
+            ):
+                self.mission_manager.execution_manager.mark_running(command_id)
+                self.get_logger().info(f"Execution command accepted: {command_id}")
         self._publish_mission_state()
 
     def _handle_task_summaries(self, msg) -> None:
@@ -164,9 +171,14 @@ class MissionManagerNode(Node):
         if command.get("mission_id") != self.mission_manager.runtime.mission_id:
             return
 
-        event = self._operator_event(command.get("command"))
+        event = self._operator_event(
+            command.get("command"),
+            command.get("robot_id"),
+        )
         if event is not None:
             self._record_event(event)
+            if isinstance(event, OperatorRobotResumeRequested):
+                self._publish_robot_control_command(event.robot_id, "resume_robot")
             self._dispatch_commands(self.mission_manager.handle_event(event))
             if isinstance(event, (OperatorPauseRequested, OperatorAbortRequested)):
                 self._request_active_move_cancellations(
@@ -174,11 +186,17 @@ class MissionManagerNode(Node):
                     if isinstance(event, OperatorPauseRequested)
                     else "operator_abort"
                 )
+            elif isinstance(event, OperatorRobotPauseRequested):
+                self._publish_robot_control_command(event.robot_id, "pause_robot")
+                self._request_active_move_cancellations(
+                    "operator_robot_pause",
+                    event.robot_id,
+                )
             return
 
         self.get_logger().warning(f"Unsupported operator command: {command}")
 
-    def _operator_event(self, command: str | None):
+    def _operator_event(self, command: str | None, robot_id=None):
         if command == "start":
             return MissionStartRequested(source="operator")
         if command == "pause":
@@ -187,6 +205,14 @@ class MissionManagerNode(Node):
             return OperatorResumeRequested(source="operator")
         if command == "abort":
             return OperatorAbortRequested(source="operator")
+        if (
+            command in ("pause_robot", "resume_robot")
+            and isinstance(robot_id, str)
+            and robot_id in self.mission_manager.runtime.world.robots
+        ):
+            if command == "pause_robot":
+                return OperatorRobotPauseRequested(robot_id, source="operator")
+            return OperatorRobotResumeRequested(robot_id, source="operator")
         return None
 
     def _handle_execution_result(self, msg: String) -> None:
@@ -257,9 +283,15 @@ class MissionManagerNode(Node):
             )
             self._dispatch_after_execution_failure(command_id, error, commands)
 
-    def _request_active_move_cancellations(self, reason: str) -> None:
+    def _request_active_move_cancellations(
+        self,
+        reason: str,
+        robot_id: str | None = None,
+    ) -> None:
         for command in self._active_execution_commands():
             if command.command_type != ExecutionCommandType.MOVE_ROBOT:
+                continue
+            if robot_id is not None and command.robot_id != robot_id:
                 continue
             self._record_event(
                 ExecutionCommandCancelRequested(
@@ -443,6 +475,20 @@ class MissionManagerNode(Node):
             {
                 **self._execution_command_payload(command, "cancel_move"),
                 "cancel_reason": reason,
+            },
+        )
+
+    def _publish_robot_control_command(
+        self,
+        robot_id: str,
+        command_type: str,
+    ) -> None:
+        self._publish_json(
+            self.execution_command_pub,
+            {
+                "mission_id": self.mission_manager.runtime.mission_id,
+                "robot_id": robot_id,
+                "command_type": command_type,
             },
         )
 
