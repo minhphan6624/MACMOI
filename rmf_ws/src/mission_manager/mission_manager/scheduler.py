@@ -12,6 +12,7 @@ class TransportTaskScheduler:
         for task_id in sorted(tasks):
             
             task = tasks[task_id]
+            
             if task.status != MissionTaskStatus.PENDING:
                 continue
 

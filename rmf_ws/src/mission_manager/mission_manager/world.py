@@ -23,6 +23,8 @@ class RobotState:
     status: RobotStatus = RobotStatus.IDLE
     active_task_id: str | None = None
     paused: bool = False
+    requested_speed_scale: float = 1.0
+    speed_scale: float = 1.0
 
 
 @dataclass

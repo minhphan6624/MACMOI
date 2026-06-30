@@ -268,6 +268,7 @@ def _robot_summaries(world, tasks, mission_manager, adapter, last_update_time: f
             "label": _robot_label(robot_id),
             "mission_state": _robot_mission_state(robot, tasks, mission_manager),
             "paused": robot.paused,
+            "speed_scale": robot.speed_scale,
             "active_task_id": robot.active_task_id,
             "location": robot.location,
             "issue": _robot_issue(robot, tasks),
