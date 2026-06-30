@@ -82,7 +82,7 @@ scheduler.py                  deterministic ready-task selection and pre-staging
 behavior_tree.py              minimal BT primitives
 transport_bt_runner.py        transport task BT executor
 world.py                      robot/item/resource runtime state facade
-world_resource_manager.py     transfer access, lease, occupancy, buffer rules
+resource_manager.py           transfer access, lease, occupancy, buffer rules
 resources.py                  resource state model
 execution.py                  execution command lifecycle
 rmf_adapter.py                RMF task API adapter for movement commands
@@ -249,7 +249,7 @@ The current tree is:
 
 ```text
 MemorySequence transport_item
-  AssignRobot
+  ClaimRobot
   RequestResourceAccess(pickup)
   MoveTo(pickup)
   MarkResourceOccupied(pickup)

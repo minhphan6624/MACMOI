@@ -313,7 +313,7 @@ source.
 The current mission-task behavior tree should mostly remain on the central PC because it contains mission-level logic:
 
 ```text
-AssignRobot
+ClaimRobot
 RequestResourceAccess
 MoveTo
 HandleItem
