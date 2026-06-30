@@ -11,7 +11,7 @@ cd ~/zenoh/
 
 ```bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-~/zenoh/bin/zenoh-bridge-ros2dds -c ~/zenoh/config/mission_topics_zenoh.json5
+~/zenoh/zenoh-bridge-ros2dds -c ~/zenoh/config/mission_topics_zenoh.json5
 ```
 
 # Step 2 - Robot 
@@ -69,7 +69,7 @@ ros2 launch robot_bringup robot.launch.py robot_id:=tb3_2
 Api Server
 
 ```bash
-source install/setup.bash
+source rmf_ws/install/setup.bash
 
 cd web/packages/api-server
 pnpm start
