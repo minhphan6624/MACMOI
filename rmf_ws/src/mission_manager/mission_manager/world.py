@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from enum import Enum
 
+from .resource_manager import ResourceManager
 from .resources import ResourceState
-from .world_resource_manager import ResourceManager
 
 # Everything state-related for components in the "world"
 
