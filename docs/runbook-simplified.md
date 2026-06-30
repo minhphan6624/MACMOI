@@ -7,6 +7,13 @@ cd ~/zenoh/
 ./zenohd
 ```
 
+## Start non-namespaced zenoh bridge
+
+```bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+~/zenoh/bin/zenoh-bridge-ros2dds -c ~/zenoh/config/mission_topics_zenoh.json5
+```
+
 # Step 2 - Robot 
 
 ssh ubuntu@192.168.50.101
@@ -45,7 +52,7 @@ cd MACMOI
 source robot_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 launch robot_bringup robot.launch.py robot_id:=tb3_1 enable_handling_node:=false
+ros2 launch robot_bringup robot.launch.py robot_id:=tb3_1 
 ```
 
 Robot2
@@ -55,7 +62,7 @@ cd MACMOI
 source robot_ws/install/setup.bash
 export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 
-ros2 launch robot_bringup robot.launch.py robot_id:=tb3_2 enable_handling_node:=false
+ros2 launch robot_bringup robot.launch.py robot_id:=tb3_2
 ```
 # Step 3 - API Server + Web things
 
@@ -107,60 +114,7 @@ export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 ros2 launch macmoi_free_fleet_bringup aiml_lab_ff_bringup.launch.xml server_uri:=http://localhost:8000/_internal
 ```
 
-# Step 5 - Run handling node (on central PC)
-
-Make sure to match the misison id with what's running
-
-Handler for robot 1
-```bash
-source robot_ws/install/setup.bash
-
-ros2 run robot_bringup handling_simulator_node --ros-args \
-  -p robot_id:=tb3_1 \
-  -p handling_duration_sec:=5.0
-```
-
-Handler for robto 2
-```bash
-source robot_ws/install/setup.bash
-
-ros2 run robot_bringup handling_simulator_node --ros-args \
-  -p robot_id:=tb3_2 \
-  -p handling_duration_sec:=5.0
-```
-
-
-# Inspection topic commands
-
-/mission_events: 
-```bash
-ros2 topic echo --full-length /mission_events std_msgs/msg/String \
-  --qos-reliability reliable \
-  --qos-durability transient_local \
-  --field data
-```
-
-/mission_commands:
-```bash
-ros2 topic echo --full-length /mission_commands std_msgs/msg/String --field data
-```
-
-Misison execution related:
-
-```bash
-ros2 topic echo /mission_execution_commands std_msgs/msg/String
-ros2 topic echo /mission_execution_results std_msgs/msg/String
-```
-
-/mission_state related
-
-```bash
-ros2 topic echo --full-length /mission_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local --field data
-
-ros2 topic echo --full-length /mission_debug_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local --field data
-```
-
-# Step 6 - RUn MIssion node
+# Step 5 - RUn MIssion node
 
 ```bash
 source .venv/bin/activate
@@ -228,3 +182,33 @@ ros2 topic pub --once /mission_commands std_msgs/msg/String \
 ```
 # Notes:
 - Restart handling node when running new mission
+
+# Inspection topic commands
+
+/mission_events: 
+```bash
+ros2 topic echo --full-length /mission_events std_msgs/msg/String \
+  --qos-reliability reliable \
+  --qos-durability transient_local \
+  --field data
+```
+
+/mission_commands:
+```bash
+ros2 topic echo --full-length /mission_commands std_msgs/msg/String --field data
+```
+
+Misison execution related:
+
+```bash
+ros2 topic echo /mission_execution_commands std_msgs/msg/String
+ros2 topic echo /mission_execution_results std_msgs/msg/String
+```
+
+/mission_state related
+
+```bash
+ros2 topic echo --full-length /mission_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local --field data
+
+ros2 topic echo --full-length /mission_debug_state std_msgs/msg/String --qos-reliability reliable --qos-durability transient_local --field data
+```

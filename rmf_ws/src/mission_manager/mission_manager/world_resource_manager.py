@@ -29,17 +29,10 @@ class ResourceManager:
 
             wait_waypoint = self._wait_waypoint(resource, actor_id)
             if wait_waypoint is not None:
-                return ResourceAccessDecision(
-                    ResourceAccessStatus.WAIT,
-                    wait_waypoint,
-                    reason,
-                    blocked_by,
-                )
-            return ResourceAccessDecision(
-                ResourceAccessStatus.BLOCKED,
-                reason=reason,
-                blocked_by=blocked_by,
-            )
+                
+                return ResourceAccessDecision(ResourceAccessStatus.WAIT, wait_waypoint,reason,blocked_by,)
+            
+            return ResourceAccessDecision( ResourceAccessStatus.BLOCKED,reason=reason, blocked_by=blocked_by,)
 
         if (
             resource.active_lease is not None

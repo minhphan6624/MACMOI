@@ -22,6 +22,9 @@ class RobotState:
     location: str
     status: RobotStatus = RobotStatus.IDLE
     active_task_id: str | None = None
+    paused: bool = False
+    requested_speed_scale: float = 1.0
+    speed_scale: float = 1.0
 
 
 @dataclass
@@ -49,7 +52,11 @@ class MissionWorld:
 
     def is_robot_available(self, robot_id: str) -> bool:
         robot = self.robots.get(robot_id)
-        return robot is not None and robot.status == RobotStatus.IDLE
+        return (
+            robot is not None
+            and robot.status == RobotStatus.IDLE
+            and not robot.paused
+        )
 
     def is_item_at(self, item_id: str, location: str) -> bool:
         item = self.items.get(item_id)
