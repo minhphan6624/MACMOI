@@ -37,7 +37,7 @@ MissionManagerNode
   -> mission event
   -> MissionManager.handle_event(...)
   -> MissionManager._advance()
-  -> TransportTaskScheduler / TransportTaskBtRunner
+  -> TransportTaskScheduler / TransportTaskRunner
   -> ExecutionManager command creation
   -> RmfAdapter / mission execution command topics
   -> execution result event
@@ -56,7 +56,7 @@ MissionManager:
 TransportTaskScheduler:
   selects the next pending task that is allowed to start
 
-TransportTaskBtRunner:
+TransportTaskRunner:
   executes one transport task using a small behavior-tree sequence
 
 MissionWorld:
@@ -80,11 +80,11 @@ mission_manager.py            mission lifecycle and task coordination
 mission_tasks.py              mission/task status and transport task model
 scheduler.py                  deterministic ready-task selection and pre-staging
 behavior_tree.py              minimal BT primitives
-transport_bt_runner.py        transport task BT executor
+transport_task_runner.py      transport task workflow runner
 world.py                      robot/item/resource runtime state facade
 resource_manager.py           transfer access, lease, occupancy, buffer rules
 resources.py                  resource state model
-execution.py                  execution command lifecycle
+execution_manager.py          execution command lifecycle
 rmf_adapter.py                RMF task API adapter for movement commands
 mission_serializer.py         mission_state JSON serialization
 free_fleet_adapter/nav2_robot_adapter.py
@@ -243,7 +243,7 @@ eligible task.
 
 ## Behavior Tree Runner
 
-`TransportTaskBtRunner` executes one `TransportItemTask`.
+`TransportTaskRunner` executes one `TransportItemTask`.
 
 The current tree is:
 
@@ -667,7 +667,7 @@ Current extension points:
 TransportTaskScheduler:
   priority, fairness, robot allocation, pre-staging policy
 
-TransportTaskBtRunner:
+TransportTaskRunner:
   richer task behavior, retry/recovery, alternative BT backend
 
 ResourceManager:

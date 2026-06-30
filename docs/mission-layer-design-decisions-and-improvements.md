@@ -38,7 +38,7 @@ ROS integration layer
 Application orchestration layer
   MissionManager
   TransportTaskScheduler
-  TransportTaskBtRunner
+  TransportTaskRunner
 
 Domain and state layer
   MissionRuntime

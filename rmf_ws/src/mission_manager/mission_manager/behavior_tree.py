@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 
-from .execution import ExecutionCommand, ExecutionManager
+from .execution_manager import ExecutionCommand, ExecutionManager
 from .mission_tasks import TransportItemTask
 from .world import MissionWorld
 

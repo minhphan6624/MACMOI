@@ -1,7 +1,7 @@
 import json
 from typing import Any
 
-from .execution import ExecutionCommand, ExecutionCommandType
+from .execution_manager import ExecutionCommand, ExecutionCommandType
 from .mission_definition import FLEET_NAME
 
 

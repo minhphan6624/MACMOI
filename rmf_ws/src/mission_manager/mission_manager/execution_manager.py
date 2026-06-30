@@ -1,3 +1,5 @@
+"""Execution command models and lifecycle management."""
+
 from dataclasses import dataclass
 from enum import Enum
 from itertools import count

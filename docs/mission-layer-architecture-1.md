@@ -76,7 +76,7 @@ Operator / Web UI
         |           |
         v           v
 +--------------+  +-----------------------+
-| Scheduler    |  | TransportTaskBtRunner |
+| Scheduler    |  | TransportTaskRunner |
 |              |  |                       |
 | chooses work |  | executes task steps   |
 +--------------+  +-----------+-----------+
@@ -116,10 +116,10 @@ concrete Python APIs rather than formal abstract interfaces.
 | `MissionManager` | `mission_manager.py` | Mission lifecycle and top-level orchestration |
 | `MissionRuntime` | `mission_manager.py` | Root in-memory mission state |
 | `TransportTaskScheduler` | `scheduler.py` | Selects eligible pending tasks |
-| `TransportTaskBtRunner` | `transport_bt_runner.py` | Runs the transport workflow |
+| `TransportTaskRunner` | `transport_task_runner.py` | Runs the transport workflow |
 | `MissionWorld` | `world.py` | Mission-layer belief state |
 | `ResourceManager` | `world_resource_manager.py` | Transfer-zone arbitration |
-| `ExecutionManager` | `execution.py` | Creates and tracks external commands |
+| `ExecutionManager` | `execution_manager.py` | Creates and tracks external commands |
 | `RmfAdapter` | `rmf_adapter.py` | Maps movement commands to RMF task requests |
 | Mission serializers | `mission_serializer.py` | Build operator and debug read models |
 
@@ -334,7 +334,7 @@ robot allocation, deadline, cost, or fairness policy beyond sorted task IDs.
 
 ## 7. Behavior-Tree Execution
 
-`TransportTaskBtRunner` executes each transport task through one fixed
+`TransportTaskRunner` executes each transport task through one fixed
 `MemorySequence`:
 
 ```text
@@ -865,7 +865,7 @@ The existing component boundaries provide clear places for future work:
 TransportTaskScheduler:
   priorities, fairness, deadlines, robot allocation, cost-based selection
 
-TransportTaskBtRunner:
+TransportTaskRunner:
   richer workflows, explicit failure branches, recovery, return-home behavior
 
 ResourceManager:

@@ -11,7 +11,7 @@ from rclpy.qos import ReliabilityPolicy
 from rmf_task_msgs.msg import ApiRequest, ApiResponse, TaskSummary
 from std_msgs.msg import String
 
-from .execution import ExecutionCommand, ExecutionCommandType
+from .execution_manager import ExecutionCommand, ExecutionCommandType
 from .mission_definition import (
     DOWNSTREAM_ROBOT,
     UPSTREAM_ROBOT,

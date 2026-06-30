@@ -2,7 +2,7 @@ from dataclasses import asdict, is_dataclass
 from enum import Enum
 from time import time
 
-from .execution import ExecutionCommandType
+from .execution_manager import ExecutionCommandType
 from .mission_definition import (
     DESTINATION_WAYPOINT,
     DOWNSTREAM_HOME_WAYPOINT,

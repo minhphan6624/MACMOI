@@ -57,7 +57,7 @@ MissionManager:
 TransportTaskScheduler:
   ready-task selection
 
-TransportTaskBtRunner:
+TransportTaskRunner:
   per-task execution behavior
 
 MissionWorld:
@@ -931,7 +931,7 @@ resource or robot state changed
 
 This should be treated as a moderate orchestration refactor, not a full
 architecture rewrite. `MissionWorld`, `ResourceManager`, `ExecutionManager`,
-`TransportTaskScheduler`, `TransportTaskBtRunner`, and `RmfAdapter`
+`TransportTaskScheduler`, `TransportTaskRunner`, and `RmfAdapter`
 can mostly remain in their current roles.
 
 ---
