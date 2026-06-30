@@ -34,7 +34,6 @@ from .world import MissionWorld, PackageState, RobotState
 class MissionStatus(Enum):
     """High-level lifecycle state for one mission run."""
 
-    CREATED = "CREATED"
     READY = "READY"
     RUNNING = "RUNNING"
     PAUSED = "PAUSED"
@@ -125,19 +124,17 @@ class MissionManager:
             self.runtime.status in (MissionStatus.PAUSED, MissionStatus.ABORTED)
             or robot_paused
         ):
-            self.task_runner.handle_command_succeeded_without_followup(task, command)
+            self.task_runner.apply_command_success(task, command)
             if self.runtime.status == MissionStatus.PAUSED or robot_paused:
                 task.status = MissionTaskStatus.RUNNING
-                task.next_expected_event = (
-                    "operator resumes robot" if robot_paused else "operator resume"
-                )
             else:
                 task.status = MissionTaskStatus.CANCELLED
-                task.next_expected_event = None
             return []
 
-        commands = self.task_runner.handle_command_succeeded(task, command)
+        if not self.task_runner.apply_command_success(task, command):
+            return self._advance()
 
+        commands = self.task_runner.advance(task)
         if commands:
             task = self.scheduler.next_ready_task(
                 self.runtime.tasks,
@@ -190,11 +187,7 @@ class MissionManager:
                 task.active_command_id = retry.command_id
                 return [retry]
 
-        task.status = MissionTaskStatus.FAILED
-        task.blocked_reason = error
-        task.blocked_by = command.robot_id
-        task.next_expected_event = "operator intervention"
-        self.runtime.status = MissionStatus.FAILED
+        self._fail_task(task, command, error)
         return []
 
     def _handle_command_cancelled(
@@ -222,26 +215,26 @@ class MissionManager:
             task.status = MissionTaskStatus.RUNNING
             robot = self.runtime.world.robots[command.robot_id]
             if reason == "operator_robot_pause" and not robot.paused:
-                task.next_expected_event = None
                 return self._advance()
-            task.next_expected_event = (
-                "operator resumes robot"
-                if reason == "operator_robot_pause"
-                else "operator resume"
-            )
             return []
 
         if reason == "operator_abort":
             task.status = MissionTaskStatus.CANCELLED
-            task.next_expected_event = None
             return []
 
+        self._fail_task(task, command, reason)
+        return []
+
+    def _fail_task(
+        self,
+        task: TransportItemTask,
+        command: ExecutionCommand,
+        reason: str,
+    ) -> None:
         task.status = MissionTaskStatus.FAILED
         task.blocked_reason = reason
         task.blocked_by = command.robot_id
-        task.next_expected_event = "operator intervention"
         self.runtime.status = MissionStatus.FAILED
-        return []
 
     # ---- Handlers for operator commands 
     def _handle_operator_pause_requested(
@@ -278,10 +271,6 @@ class MissionManager:
         if robot is None or not robot.paused:
             return []
         robot.paused = False
-        if robot.active_task_id is not None:
-            task = self.runtime.tasks.get(robot.active_task_id)
-            if task is not None:
-                task.next_expected_event = None
         return self._advance()
 
     def _handle_operator_abort_requested(
@@ -299,7 +288,6 @@ class MissionManager:
                 if task.status == MissionTaskStatus.SUCCEEDED:
                     continue
                 task.status = MissionTaskStatus.CANCELLED
-                task.next_expected_event = None
         return []
 
     
@@ -372,10 +360,7 @@ class MissionManager:
 
         for task in self.runtime.tasks.values():
             if task.status in (MissionTaskStatus.RUNNING, MissionTaskStatus.BLOCKED):
-                if (
-                    task.robot_id is not None
-                    and self.runtime.world.robots[task.robot_id].paused
-                ):
+                if self.runtime.world.robots[task.robot_id].paused:
                     continue
                 commands = self.task_runner.advance(task)
 

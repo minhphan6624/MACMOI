@@ -44,11 +44,20 @@ class ResourceAccessStatus(Enum):
     WAIT = "WAIT"
     BLOCKED = "BLOCKED"
 
+
+class ResourceBlockReason:
+    WAITING_FOR_TRANSFER_LEASE = "WAITING_FOR_TRANSFER_LEASE"
+    TRANSFER_ROBOT_OCCUPIED = "TRANSFER_ROBOT_OCCUPIED"
+    TRANSFER_PACKAGE_FULL = "TRANSFER_PACKAGE_FULL"
+    PACKAGE_NOT_AVAILABLE = "PACKAGE_NOT_AVAILABLE"
+    MISSING_ITEM = "missing_item"
+
+
 @dataclass
 class ResourceAccessDecision:
     """Resource access response with optional wait/block explanation."""
 
     status: ResourceAccessStatus
-    target: str | None = None
+    wait_waypoint: str | None = None
     reason: str | None = None
     blocked_by: str | None = None

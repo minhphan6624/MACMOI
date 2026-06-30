@@ -37,15 +37,12 @@ class TransportItemTask:
     item_id: str
     pickup: str
     dropoff: str
-    robot_id: str | None = None
+    robot_id: str
     status: MissionTaskStatus = MissionTaskStatus.PENDING
     phase: TransportTaskPhase = TransportTaskPhase.NOT_STARTED
     active_command_id: str | None = None
     waiting_resource_id: str | None = None
-    waiting_purpose: str | None = None
     blocked_reason: str | None = None
     blocked_by: str | None = None
     waiting_at: str | None = None
-    unblock_condition: str | None = None
-    next_expected_event: str | None = None
     bt_blackboard: dict = field(default_factory=dict)

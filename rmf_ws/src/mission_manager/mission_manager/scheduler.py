@@ -10,25 +10,19 @@ class TransportTaskScheduler:
         """Return the first pending task whose robot, package, and pickup are ready."""
 
         for task_id in sorted(tasks):
-            
             task = tasks[task_id]
-            
-            if task.status != MissionTaskStatus.PENDING:
-                continue
 
-            if task.robot_id is None:
+            if task.status != MissionTaskStatus.PENDING:
                 continue
 
             if not world.is_robot_available(task.robot_id):
                 continue
-            
             item_at_pickup = world.is_item_at(task.item_id, task.pickup)
-            
+
             if not item_at_pickup and not self._can_wait_for_pickup(task, world):
                 continue
             if item_at_pickup and not self._managed_pickup_available(task, world):
                 continue
-            
             return task
         return None
 
@@ -40,7 +34,6 @@ class TransportTaskScheduler:
 
         return (
             resource is not None
-            and task.robot_id is not None
             and (
                 resource.wait_waypoint is not None
                 or task.robot_id in resource.wait_waypoints
@@ -53,10 +46,9 @@ class TransportTaskScheduler:
         """Return whether a managed pickup resource is ready for this task."""
 
         resource = world.resources.get(task.pickup)
-        
         if resource is None:
             return True
-        
+
         return (
             resource.active_lease is None
             and resource.robot_slots_available > 0

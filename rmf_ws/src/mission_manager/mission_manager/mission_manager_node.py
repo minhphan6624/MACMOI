@@ -11,7 +11,7 @@ from rclpy.qos import ReliabilityPolicy
 from rmf_task_msgs.msg import ApiRequest, ApiResponse, TaskSummary
 from std_msgs.msg import String
 
-from .execution import ExecutionCommand, ExecutionCommandStatus, ExecutionCommandType
+from .execution import ExecutionCommand, ExecutionCommandType
 from .mission_definition import (
     DOWNSTREAM_ROBOT,
     UPSTREAM_ROBOT,
@@ -38,14 +38,6 @@ from .mission_events import (
 )
 from .mission_manager import MissionManager
 from .rmf_adapter import RmfAdapter
-
-
-TERMINAL_EXECUTION_STATUSES = (
-    ExecutionCommandStatus.SUCCEEDED,
-    ExecutionCommandStatus.FAILED,
-    ExecutionCommandStatus.CANCELLED,
-)
-
 
 class MissionManagerNode(Node):
     """ROS node that connects mission logic to RMF, Free Fleet, and topics."""
@@ -104,7 +96,6 @@ class MissionManagerNode(Node):
 
         self.recent_events = []
         self.recent_actions = []
-        self.active_handling_commands = []
         self.pending_speed_scale_requests = {}
         self.last_event = None
         self.last_action = None
@@ -130,7 +121,7 @@ class MissionManagerNode(Node):
             command = self.mission_manager.execution_manager.commands.get(command_id)
             if (
                 command is not None
-                and command.status not in TERMINAL_EXECUTION_STATUSES
+                and not command.is_terminal
             ):
                 self.mission_manager.execution_manager.mark_running(command_id)
                 self.get_logger().info(f"Execution command accepted: {command_id}")
@@ -276,7 +267,7 @@ class MissionManagerNode(Node):
             return
 
         command = self.mission_manager.execution_manager.commands.get(command_id)
-        if command is None or command.status in TERMINAL_EXECUTION_STATUSES:
+        if command is None or command.is_terminal:
             return
 
         status = result.get("status")
@@ -297,8 +288,6 @@ class MissionManagerNode(Node):
                     )
                     return
 
-            self._remove_active_handling_command(command_id)
-
             commands = self._process_execution_event(
                 ExecutionCommandCompleted(command_id, source, result.get("rmf_task_id"))
             )
@@ -311,7 +300,6 @@ class MissionManagerNode(Node):
                 or result.get("error")
                 or "CANCELLED"
             )
-            self._remove_active_handling_command(command_id)
             commands = self._process_execution_event(
                 ExecutionCommandCancelled(command_id, reason, source, self._execution_failure_details(command, result))
             )
@@ -320,7 +308,6 @@ class MissionManagerNode(Node):
 
         if status == "FAILED":
             error = result.get("error") or status
-            self._remove_active_handling_command(command_id)
             commands = self._process_execution_event(
                 ExecutionCommandFailed(command_id, error, source, self._execution_failure_details(command, result))
             )
@@ -373,19 +360,15 @@ class MissionManagerNode(Node):
         return [
             command
             for command in self.mission_manager.execution_manager.commands.values()
-            if command.status not in TERMINAL_EXECUTION_STATUSES
+            if not command.is_terminal
         ]
 
-    def _remove_active_handling_command(self, command_id: str) -> None:
-        """Clean up active package handling commands."""
-        self.active_handling_commands = [
-            command
-            for command in self.active_handling_commands
-            if command.get("command_id") != command_id
-        ]
-
-    def _dispatch_after_execution_failure(self,failed_command_id: str,reason: str,
-                                          commands: list[ExecutionCommand],) -> None:
+    def _dispatch_after_execution_failure(
+        self,
+        failed_command_id: str,
+        reason: str,
+        commands: list[ExecutionCommand],
+    ) -> None:
         if commands:
             self._record_event(
                 ExecutionCommandRetry(
@@ -396,7 +379,11 @@ class MissionManagerNode(Node):
             )
         self._dispatch_commands(commands)
 
-    def _move_completion_failure(self,command: ExecutionCommand,result: dict,) -> tuple[str, dict] | None:
+    def _move_completion_failure(
+        self,
+        command: ExecutionCommand,
+        result: dict,
+    ) -> tuple[str, dict] | None:
         """Return failure details if a reported move success should be rejected."""
 
         source = result.get("source", "execution_result")
@@ -418,7 +405,11 @@ class MissionManagerNode(Node):
 
         return None
 
-    def _execution_failure_details(self,command: ExecutionCommand,result: dict,) -> dict:
+    def _execution_failure_details(
+        self,
+        command: ExecutionCommand,
+        result: dict,
+    ) -> dict:
         details = {
             "robot_id": command.robot_id,
             "target": command.target,
@@ -447,16 +438,6 @@ class MissionManagerNode(Node):
 
             elif command.command_type == ExecutionCommandType.HANDLE_ITEM:
                 self._publish_execution_command(command)
-                # Expose the outstanding robot-side handling command in mission_debug_state.
-                self.active_handling_commands.append(
-                    {
-                        "command_id": command.command_id,
-                        "robot_id": command.robot_id,
-                        "item_id": command.item_id,
-                        "handling_type": command.handling_type,
-                    }
-                )
-
                 self.mission_manager.execution_manager.mark_submitted(command.command_id)
                 self.mission_manager.execution_manager.mark_running(command.command_id)
 
@@ -508,7 +489,6 @@ class MissionManagerNode(Node):
                     "last_action": self.last_action,
                     "recent_events": self.recent_events,
                     "recent_actions": self.recent_actions,
-                    "active_handling_commands": self.active_handling_commands,
                 },
             )
         )

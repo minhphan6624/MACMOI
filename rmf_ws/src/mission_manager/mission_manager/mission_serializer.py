@@ -2,7 +2,7 @@ from dataclasses import asdict, is_dataclass
 from enum import Enum
 from time import time
 
-from .execution import ExecutionCommandStatus, ExecutionCommandType
+from .execution import ExecutionCommandType
 from .mission_definition import (
     DESTINATION_WAYPOINT,
     DOWNSTREAM_HOME_WAYPOINT,
@@ -13,18 +13,40 @@ from .mission_definition import (
     UPSTREAM_WAIT_WAYPOINT,
 )
 from .mission_tasks import MissionTaskStatus, TransportTaskPhase
+from .resources import ResourceBlockReason
 
 
 MISSION_NAME = "Two-robot package handoff"
 
 MISSION_STATUS_TO_UI = {
-    "CREATED": "idle",
     "READY": "idle",
     "RUNNING": "active",
     "PAUSED": "paused",
     "COMPLETED": "completed",
     "ABORTED": "cancelled",
     "FAILED": "failed",
+}
+
+UNBLOCK_CONDITIONS = {
+    ResourceBlockReason.PACKAGE_NOT_AVAILABLE: "package buffered at transfer",
+    ResourceBlockReason.TRANSFER_PACKAGE_FULL: "package removed from transfer buffer",
+    ResourceBlockReason.TRANSFER_ROBOT_OCCUPIED: (
+        "transfer robot occupancy and lease released"
+    ),
+    ResourceBlockReason.WAITING_FOR_TRANSFER_LEASE: (
+        "transfer robot occupancy and lease released"
+    ),
+}
+
+NEXT_EXPECTED_EVENTS = {
+    ResourceBlockReason.PACKAGE_NOT_AVAILABLE: (
+        "upstream robot unloads package at transfer"
+    ),
+    ResourceBlockReason.TRANSFER_PACKAGE_FULL: (
+        "downstream robot loads package from transfer"
+    ),
+    ResourceBlockReason.TRANSFER_ROBOT_OCCUPIED: "robot exits transfer",
+    ResourceBlockReason.WAITING_FOR_TRANSFER_LEASE: "active transfer lease released",
 }
 
 TASK_STATUS_TO_UI = {
@@ -103,12 +125,19 @@ def serialize_mission_state(mission_manager, adapter=None, last_event=None):
             "total_steps": len(runtime.tasks),
             "active_robot": active_task.robot_id if active_task is not None else None,
             "current_blocker": _current_blocker(runtime.tasks),
-            "next_step": _next_step(runtime.tasks),
+            "next_step": _next_step(runtime.tasks, runtime.status, world),
             "last_update": last_update_time,
         },
         "packages": _package_summaries(world),
-        "robots": _robot_summaries(world, runtime.tasks, mission_manager, adapter, last_update_time),
-        "tasks": _task_summaries(runtime.tasks),
+        "robots": _robot_summaries(
+            world,
+            runtime.tasks,
+            runtime.status,
+            mission_manager,
+            adapter,
+            last_update_time,
+        ),
+        "tasks": _task_summaries(runtime.tasks, runtime.status, world),
         "zones": _zone_summaries(world),
         "operator": {
             "active_command_count": len(active_command_ids),
@@ -145,7 +174,7 @@ def serialize_mission_debug_state(mission_manager, adapter=None, node_debug=None
         "total_packages": total_packages,
         "delivered_count": delivered_count,
         "remaining_count": total_packages - delivered_count,
-        "packages": _json_value(_package_summaries(world)),
+        "packages": _package_summaries(world),
         "robots": _json_value(world.robots),
         "transfer": _json_value(_transfer_summary(world)),
         "mission_tasks": _json_value(runtime.tasks),
@@ -165,7 +194,7 @@ def serialize_mission_debug_state(mission_manager, adapter=None, node_debug=None
             "last_action": debug.get("last_action"),
             "recent_events": debug.get("recent_events", []),
             "recent_actions": debug.get("recent_actions", []),
-            "active_handling_commands": debug.get("active_handling_commands", []),
+            "active_handling_commands": _active_handling_commands(mission_manager),
             **adapter_debug,
         },
     }
@@ -223,12 +252,21 @@ def _active_command_ids(mission_manager) -> list[str]:
     return [
         command.command_id
         for command in mission_manager.execution_manager.commands.values()
-        if command.status
-        not in (
-            ExecutionCommandStatus.SUCCEEDED,
-            ExecutionCommandStatus.FAILED,
-            ExecutionCommandStatus.CANCELLED,
-        )
+        if not command.is_terminal
+    ]
+
+
+def _active_handling_commands(mission_manager) -> list[dict]:
+    return [
+        {
+            "command_id": command.command_id,
+            "robot_id": command.robot_id,
+            "item_id": command.item_id,
+            "handling_type": command.handling_type,
+        }
+        for command in mission_manager.execution_manager.commands.values()
+        if command.command_type == ExecutionCommandType.HANDLE_ITEM
+        and not command.is_terminal
     ]
 
 
@@ -261,7 +299,14 @@ def _package_summaries(world) -> dict:
     return packages
 
 
-def _robot_summaries(world, tasks, mission_manager, adapter, last_update_time: float) -> list[dict]:
+def _robot_summaries(
+    world,
+    tasks,
+    mission_status,
+    mission_manager,
+    adapter,
+    last_update_time: float,
+) -> list[dict]:
     return [
         {
             "id": robot_id,
@@ -271,7 +316,7 @@ def _robot_summaries(world, tasks, mission_manager, adapter, last_update_time: f
             "speed_scale": robot.speed_scale,
             "active_task_id": robot.active_task_id,
             "location": robot.location,
-            "issue": _robot_issue(robot, tasks),
+            "issue": _robot_issue(robot, tasks, mission_status, world),
             "rmf_task_id": _rmf_task_id(robot.active_task_id, mission_manager, adapter),
             "last_update": last_update_time,
         }
@@ -299,13 +344,13 @@ def _robot_mission_state(robot, tasks, mission_manager) -> str:
     return "assigned"
 
 
-def _robot_issue(robot, tasks) -> str | None:
+def _robot_issue(robot, tasks, mission_status, world) -> str | None:
     if robot.active_task_id is None:
         return None
     task = tasks.get(robot.active_task_id)
     if task is None:
         return None
-    return task.blocked_reason or task.next_expected_event
+    return task.blocked_reason or _next_expected_event(task, mission_status, world)
 
 
 def _rmf_task_id(task_id: str | None, mission_manager, adapter) -> str | None:
@@ -320,26 +365,31 @@ def _rmf_task_id(task_id: str | None, mission_manager, adapter) -> str | None:
     return None
 
 
-def _task_summaries(tasks) -> list[dict]:
+def _task_summaries(tasks, mission_status, world) -> list[dict]:
     return [
-        {
-            "id": task.task_id,
-            "label": _task_label(task),
-            "status": TASK_STATUS_TO_UI.get(task.status, task.status.value.lower()),
-            "phase": task.phase.value,
-            "assigned_robot": task.robot_id,
-            "start": task.pickup,
-            "goal": task.dropoff,
-            "dependencies": _task_dependencies(task, tasks),
-            "blocked_reason": task.blocked_reason,
-            "blocked_by": task.blocked_by,
-            "waiting_at": task.waiting_at,
-            "unblock_condition": task.unblock_condition,
-            "next_expected_event": task.next_expected_event,
-            "notes": task.blocked_reason or task.next_expected_event or "",
-        }
-        for task_id, task in sorted(tasks.items())
+        _task_summary(task, tasks, mission_status, world)
+        for task in sorted(tasks.values(), key=lambda task: task.task_id)
     ]
+
+
+def _task_summary(task, tasks, mission_status, world) -> dict:
+    next_expected_event = _next_expected_event(task, mission_status, world)
+    return {
+        "id": task.task_id,
+        "label": _task_label(task),
+        "status": TASK_STATUS_TO_UI.get(task.status, task.status.value.lower()),
+        "phase": task.phase.value,
+        "assigned_robot": task.robot_id,
+        "start": task.pickup,
+        "goal": task.dropoff,
+        "dependencies": _task_dependencies(task, tasks),
+        "blocked_reason": task.blocked_reason,
+        "blocked_by": task.blocked_by,
+        "waiting_at": task.waiting_at,
+        "unblock_condition": UNBLOCK_CONDITIONS.get(task.blocked_reason),
+        "next_expected_event": next_expected_event,
+        "notes": task.blocked_reason or next_expected_event or "",
+    }
 
 
 def _task_label(task) -> str:
@@ -354,7 +404,7 @@ def _task_dependencies(task, tasks) -> list[str]:
 
 
 def _zone_summaries(world) -> list[dict]:
-    zones = [
+    return [
         {
             "id": SOURCE_WAYPOINT,
             "label": "Source",
@@ -398,9 +448,6 @@ def _zone_summaries(world) -> list[dict]:
             "status": "available",
         },
     ]
-    return zones
-
-
 def _transfer_zone_status(world) -> dict:
     resource = world.resources.get(TRANSFER_WAYPOINT)
     if resource is None:
@@ -478,14 +525,17 @@ def _phase_for_task(task) -> str:
 def _current_blocker(tasks) -> str | None:
     for task in tasks.values():
         if task.status == MissionTaskStatus.BLOCKED:
-            return task.blocked_reason or task.next_expected_event
+            return task.blocked_reason
     return None
 
 
-def _next_step(tasks) -> str | None:
+def _next_step(tasks, mission_status, world) -> str | None:
     active = _active_task(tasks)
     if active is not None:
-        return active.next_expected_event or active.phase.value.lower()
+        return (
+            _next_expected_event(active, mission_status, world)
+            or active.phase.value.lower()
+        )
     for task_id, task in sorted(tasks.items()):
         if task.status == MissionTaskStatus.PENDING:
             return task_id
@@ -498,11 +548,20 @@ def _active_command_for_task(task_id: str | None, mission_manager):
     for command in mission_manager.execution_manager.commands.values():
         if command.task_id != task_id:
             continue
-        if command.status in (
-            ExecutionCommandStatus.SUCCEEDED,
-            ExecutionCommandStatus.FAILED,
-            ExecutionCommandStatus.CANCELLED,
-        ):
+        if command.is_terminal:
             continue
         return command
     return None
+
+
+def _next_expected_event(task, mission_status, world) -> str | None:
+    if task.status == MissionTaskStatus.FAILED:
+        return "operator intervention"
+    if task.status not in (MissionTaskStatus.RUNNING, MissionTaskStatus.BLOCKED):
+        return None
+    robot = world.robots.get(task.robot_id)
+    if robot is not None and robot.paused:
+        return "operator resumes robot"
+    if mission_status.value == "PAUSED":
+        return "operator resume"
+    return NEXT_EXPECTED_EVENTS.get(task.blocked_reason)
