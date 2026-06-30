@@ -21,6 +21,13 @@ class ExecutionCommandStatus(Enum):
     CANCELLED = "CANCELLED"
 
 
+TERMINAL_EXECUTION_STATUSES = {
+    ExecutionCommandStatus.SUCCEEDED,
+    ExecutionCommandStatus.FAILED,
+    ExecutionCommandStatus.CANCELLED,
+}
+
+
 @dataclass
 class ExecutionCommand:
     """Command emitted by mission logic for ROS/RMF execution."""
@@ -34,6 +41,10 @@ class ExecutionCommand:
     handling_type: str | None = None
     status: ExecutionCommandStatus = ExecutionCommandStatus.PENDING
     error: str | None = None
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in TERMINAL_EXECUTION_STATUSES
 
 
 class ExecutionManager:
@@ -83,38 +94,25 @@ class ExecutionManager:
         self.commands[command_id].status = ExecutionCommandStatus.RUNNING
 
     def mark_succeeded(self, command_id: str) -> bool:
-        command = self.commands[command_id]
-        if command.status in (
-            ExecutionCommandStatus.SUCCEEDED,
-            ExecutionCommandStatus.FAILED,
-            ExecutionCommandStatus.CANCELLED,
-        ):
-            return False
-        command.status = ExecutionCommandStatus.SUCCEEDED
-        return True
+        return self._mark_terminal(command_id, ExecutionCommandStatus.SUCCEEDED)
 
     def mark_failed(self, command_id: str, error: str) -> bool:
-        command = self.commands[command_id]
-        if command.status in (
-            ExecutionCommandStatus.SUCCEEDED,
-            ExecutionCommandStatus.FAILED,
-            ExecutionCommandStatus.CANCELLED,
-        ):
-            return False
-        command.status = ExecutionCommandStatus.FAILED
-        command.error = error
-        return True
+        return self._mark_terminal(command_id, ExecutionCommandStatus.FAILED, error)
 
     def mark_cancelled(self, command_id: str, reason: str) -> bool:
+        return self._mark_terminal(command_id, ExecutionCommandStatus.CANCELLED, reason)
+
+    def _mark_terminal(
+        self,
+        command_id: str,
+        status: ExecutionCommandStatus,
+        error: str | None = None,
+    ) -> bool:
         command = self.commands[command_id]
-        if command.status in (
-            ExecutionCommandStatus.SUCCEEDED,
-            ExecutionCommandStatus.FAILED,
-            ExecutionCommandStatus.CANCELLED,
-        ):
+        if command.is_terminal:
             return False
-        command.status = ExecutionCommandStatus.CANCELLED
-        command.error = reason
+        command.status = status
+        command.error = error
         return True
 
     def _add_command(self, command: ExecutionCommand) -> ExecutionCommand:
